@@ -1,2 +1,6 @@
 __pycache__/
 *.so
+*.egg-info
+
+.gitignore
+reviews.md
