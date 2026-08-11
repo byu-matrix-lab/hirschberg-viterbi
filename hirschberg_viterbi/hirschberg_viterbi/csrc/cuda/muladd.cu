@@ -10,7 +10,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-namespace extension_cpp_stable {
+namespace hirschberg_viterbi {
 
 __global__ void muladd_kernel(int numel, const float *a, const float *b,
                               float c, float *result) {
@@ -134,10 +134,10 @@ void myadd_out_cuda(const torch::stable::Tensor &a,
 }
 
 // Registers CUDA implementations for mymuladd, mymul, myadd_out
-STABLE_TORCH_LIBRARY_IMPL(extension_cpp_stable, CUDA, m) {
+STABLE_TORCH_LIBRARY_IMPL(hirschberg_viterbi, CUDA, m) {
   m.impl("mymuladd", TORCH_BOX(&mymuladd_cuda));
   m.impl("mymul", TORCH_BOX(&mymul_cuda));
   m.impl("myadd_out", TORCH_BOX(&myadd_out_cuda));
 }
 
-} // namespace extension_cpp_stable
+} // namespace hirschberg_viterbi

@@ -25,7 +25,7 @@ extern "C" {
   }
 }
 
-namespace extension_cpp_stable {
+namespace hirschberg_viterbi {
 
 torch::stable::Tensor mymuladd_cpu(
     const torch::stable::Tensor& a,
@@ -102,14 +102,14 @@ void myadd_out_cpu(
 }
 
 // Defines the operators
-STABLE_TORCH_LIBRARY(extension_cpp_stable, m) {
+STABLE_TORCH_LIBRARY(hirschberg_viterbi, m) {
   m.def("mymuladd(Tensor a, Tensor b, float c) -> Tensor");
   m.def("mymul(Tensor a, Tensor b) -> Tensor");
   m.def("myadd_out(Tensor a, Tensor b, Tensor(a!) out) -> ()");
 }
 
 // Registers CPU implementations for mymuladd, mymul, myadd_out
-STABLE_TORCH_LIBRARY_IMPL(extension_cpp_stable, CPU, m) {
+STABLE_TORCH_LIBRARY_IMPL(hirschberg_viterbi, CPU, m) {
   m.impl("mymuladd", TORCH_BOX(&mymuladd_cpu));
   m.impl("mymul", TORCH_BOX(&mymul_cpu));
   m.impl("myadd_out", TORCH_BOX(&myadd_out_cpu));
