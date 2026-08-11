@@ -1,4 +1,4 @@
-#pragma once
+///#pragma once
 
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
@@ -40,3 +40,6 @@ py::array_t<int32_t> hirschberg_viterbi(
     const int32_t blank = 0,
     const int64_t soft_mem_limit=1000LL
 );
+
+// Add star parameters (maybe)
+// map to torchaudio signature
