@@ -1,6 +1,13 @@
 #include <cmath>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+#include <torch/headeronly/macros/Macros.h>
 
 #include "helpers.h"
+
+using torch::headeronly::ScalarType;
 
 int64_t bt_two_bits::needed_size(int n, int width) {
     int64_t ans = (width+3)>>2;
@@ -57,7 +64,7 @@ bt_full_byte::~bt_full_byte() {
 
 template<typename target_t>
 std::pair<target_t*, int> add_blanks(
-    const torch::stable::Tensor& targets,
+    const Tensor& targets,
     const target_t blank) {
     int n = targets.size(0);
     target_t* ans = new target_t[2*n+5];
@@ -78,20 +85,87 @@ std::pair<target_t*, int> add_blanks(
 }
 
 template std::pair<int32_t*, int> add_blanks<int32_t>(
-    const torch::stable::Tensor& targets,
+    const Tensor& targets,
     const int32_t blank);
 
-template<typename target_t>
-target_t count_repeats(const torch::stable::Tensor& s) {
-    const int N = s.size(0);
-    int32_t ans = 0;
-    auto* const accessor = s.const_data_ptr<target_t>();
-    for (int i=2;i<N;++i) if (accessor[i] == accessor[i-1]) ++ans;
-    return ans;
+template<DeviceType device, typename target_t>
+std::tuple<target_t*, int, Tensor, Tensor> common_setup(
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const target_t blank) {
+    STD_TORCH_CHECK(log_probs.device().type() == device);
+    STD_TORCH_CHECK(log_probs.device() == targets.device());
+
+    STD_TORCH_CHECK(log_probs.dim() == 2, "log_probs must have shape [sequence length, character set].");
+    STD_TORCH_CHECK(targets.dim() == 1, "targets must have shape [sequence length].");
+    
+    const target_t charset_size = (target_t)log_probs.size(1);
+    STD_TORCH_CHECK(
+        0 <= blank && blank < charset_size, 
+        "Expected blank to be in range [0, ",
+        charset_size,
+        ")."
+    );
+
+    // make tensors contiguous for caching purposes
+    auto cont_targets = torch::stable::contiguous(targets);
+
+    // check targ_pointer values
+    int num_repeats = 0;
+    {
+        const target_t* targ_pointer;
+        if constexpr (device == DeviceType::CPU) {
+           targ_pointer = cont_targets.const_data_ptr<target_t>();
+        } else {
+            assert (false); // not implemented yet
+            // copy to CPU and give pointer there
+            // could make a kernel, but likely negligable gains
+        }
+        // TODO: copy to cpu if needed here
+        target_t pval = -1;
+        for (int i=0;i<cont_targets.size(0);++i) {
+            target_t val = targ_pointer[i];
+            STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
+            STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
+            num_repeats+=(val==pval);
+            pval=val;
+        }
+    }
+
+    STD_TORCH_CHECK(
+        num_repeats + cont_targets.size(0) <= log_probs.size(0),
+        "Target sequence too long for CTC. Found log_probs length ",
+        log_probs.size(0),
+        " < target length ",
+        cont_targets.size(0),
+        " + ",
+        num_repeats,
+        " repeats."
+    );
+
+    const int64_t T = log_probs.size(0);
+
+    // this allocates memory
+    auto [text, text_len] = add_blanks<int32_t>(cont_targets, blank);
+    // Either no more input assertions, or use smart pointers instead
+    // otherwise text will leak
+
+    auto ans = torch::stable::empty(
+        {T},
+        torch::headeronly::ScalarType::Int,
+        torch::headeronly::Layout::Strided,
+        log_probs.device(),
+        false // don't pin memory
+    );
+
+    auto cont_log_probs = torch::stable::contiguous(log_probs);
+    return {text, text_len, cont_log_probs, ans};
 }
 
-template int32_t count_repeats<int32_t>(
-    const torch::stable::Tensor& s);
+template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const int32_t blank);
 
 // adapted from scipy/xsf
 // https://github.com/scipy/xsf/blob/33768a09623689efdf7bcaf0afa167341dda0758/include/xsf/cephes/erfinv.h#L56

@@ -2,6 +2,9 @@
 
 #include <torch/csrc/stable/tensor.h>
 
+using torch::stable::Tensor;
+using torch::headeronly::DeviceType;
+
 // I did not see any gains from using this with hirschberg viterbi
 struct bt_two_bits {
     int max_width;
@@ -25,12 +28,14 @@ struct bt_full_byte {
 
 template<typename target_t>
 std::pair<target_t*, int> add_blanks(
-    const torch::stable::Tensor& targets,
+    const Tensor& targets,
     const target_t blank);
 
-template<typename target_t>
-target_t count_repeats(
-    const torch::stable::Tensor& s);
+template<DeviceType device, typename target_t>
+std::tuple<target_t*, int, Tensor, Tensor> common_setup(
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const target_t blank = 0);
 
 namespace xsf {
     namespace cephes {

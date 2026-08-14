@@ -11,9 +11,12 @@
 
 using namespace std; // TODO: remove this
 
+using torch::stable::Tensor;
+using torch::headeronly::ScalarType;
+
 template<typename backtrack_t, typename scalar_t, typename target_t>
 void _normal_viterbi_helper(
-    const torch::stable::Tensor& logits,
+    const Tensor& logits,
     target_t* text,
     target_t* const ans,
     int logits_left,
@@ -84,9 +87,9 @@ void _normal_viterbi_helper(
 
 // template<typename backtrack_t, typename scalar_t, typename target_t>
 // void _hirschberg_helper(
-//     const torch::stable::Tensor& logits,
+//     const Tensor& logits,
 //     target_t* text,
-//     torch::stable::Tensor& ans,
+//     Tensor& ans,
 //     int logits_left,
 //     int logits_right,
 //     int text_left,
@@ -209,63 +212,26 @@ void _normal_viterbi_helper(
 
 
 
-torch::stable::Tensor viterbi_cpu(
-    const torch::stable::Tensor& log_probs,
-    const torch::stable::Tensor& targets,
+Tensor viterbi_cpu(
+    const Tensor& log_probs,
+    const Tensor& targets,
     const int32_t blank = 0) {
 
-    // all of this logic could probably be in a helper function
+    STD_TORCH_CHECK(log_probs.scalar_type() == ScalarType::Float);
+    STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int);
     
-    STD_TORCH_CHECK(log_probs.scalar_type() == torch::headeronly::ScalarType::Float);
-    STD_TORCH_CHECK(targets.scalar_type() == torch::headeronly::ScalarType::Int);
+    // TODO: maybe allow double for log_prob data type with another template
+    // but I think ints can be used for all reasonable character sets and times
 
-    STD_TORCH_CHECK(log_probs.device().type() == torch::headeronly::DeviceType::CPU);
-    STD_TORCH_CHECK(log_probs.device() == targets.device());
-
-    STD_TORCH_CHECK(log_probs.dim() == 2, "log_probs must have shape [sequence length, character set].");
-    STD_TORCH_CHECK(targets.dim() == 1, "targets must have shape [sequence length].");
-    
-    // TODO: check blank and targets in range of log_probs character set
-    // avoids bad memory failures
-    // TODO: check that no targets are blank (incorrect use)
-
-    // make tensors contiguous for caching purposes
-    auto cont_targets = torch::stable::contiguous(targets);
-    int32_t num_repeats = count_repeats<int32_t>(cont_targets);
-
-    STD_TORCH_CHECK(
-        num_repeats + cont_targets.size(0) <= log_probs.size(0),
-        "Target sequence too long for CTC. Found log_probs length ",
-        log_probs.size(0),
-        " < target length ",
-        cont_targets.size(0),
-        " + ",
-        num_repeats,
-        " repeats."
-    );
-    auto cont_log_probs = torch::stable::contiguous(log_probs);
-
-    const int64_t T = log_probs.size(0);
-
-    // this allocates memory
-    auto [text, text_len] = add_blanks<int32_t>(cont_targets, blank);
-    // Either no more input assertions, or use smart pointers instead
-    // otherwise text will leak
-
-    auto ans = torch::stable::empty(
-        {T},
-        torch::headeronly::ScalarType::Int,
-        torch::headeronly::Layout::Strided,
-        log_probs.device(),
-        false // don't pin memory
-    );
-
+    auto [text, text_len, cont_log_probs, ans] =
+        common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
+        
     _normal_viterbi_helper<bt_full_byte, float, int32_t>(
-        log_probs,
+        cont_log_probs,
         text,
         ans.mutable_data_ptr<int32_t>(),
         0,
-        T,
+        cont_log_probs.size(0),
         0,
         text_len
     );
@@ -276,9 +242,9 @@ torch::stable::Tensor viterbi_cpu(
     return ans;
 }
 
-torch::stable::Tensor hirschberg_viterbi_cpu(
-    const torch::stable::Tensor& log_probs,
-    const torch::stable::Tensor& targets,
+Tensor hirschberg_viterbi_cpu(
+    const Tensor& log_probs,
+    const Tensor& targets,
     const int32_t blank = 0,
     const int64_t soft_mem_limit=1000LL) {
 
