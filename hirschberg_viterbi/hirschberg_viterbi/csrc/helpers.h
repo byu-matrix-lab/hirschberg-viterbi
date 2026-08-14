@@ -1,10 +1,8 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
+#include <torch/csrc/stable/tensor.h>
 
-namespace py = pybind11;
-
+// I did not see any gains from using this with hirschberg viterbi
 struct bt_two_bits {
     int max_width;
     uint8_t* data;
@@ -27,8 +25,12 @@ struct bt_full_byte {
 
 template<typename target_t>
 std::pair<target_t*, int> add_blanks(
-    const py::array_t<target_t>& targets,
+    const torch::stable::Tensor& targets,
     const target_t blank);
+
+template<typename target_t>
+target_t count_repeats(
+    const torch::stable::Tensor& s);
 
 namespace xsf {
     namespace cephes {

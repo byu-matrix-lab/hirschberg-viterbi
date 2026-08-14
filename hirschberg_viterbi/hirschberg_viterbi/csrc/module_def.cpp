@@ -1,13 +1,51 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <iostream>
+#include <Python.h>
+
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+#include <torch/headeronly/macros/Macros.h>
 
 #include "hirschberg_viterbi.h"
 #include "pruned_hirschberg_viterbi.h"
 
-// TODO: maybe add templates for what is wanted here here
-PYBIND11_MODULE(hirschberg_viterbi_impl, m) {
-    m.doc() = "pybind11 example plugin"; // optional module docstring
+extern "C" {
+  /* Creates a dummy empty _C module that can be imported from Python.
+     The import from Python will load the .so consisting of this file
+     in this extension, so that the STABLE_TORCH_LIBRARY static initializers
+     below are run. */
+  PyObject* PyInit__C(void)
+  {
+      static struct PyModuleDef module_def = {
+          PyModuleDef_HEAD_INIT,
+          "_C",   /* name of module */
+          NULL,   /* module documentation, may be NULL */
+          -1,     /* size of per-interpreter state of the module,
+                     or -1 if the module keeps state in global variables. */
+          NULL,   /* methods */
+      };
+      return PyModule_Create(&module_def);
+  }
+}
+
+namespace hirschberg_viterbi {
+// Defines the operators
+STABLE_TORCH_LIBRARY(hirschberg_viterbi, m) {
+  m.def("viterbi(Tensor log_probs, Tensor targets, int blank=0) -> Tensor");
+//   m.def("mymul(Tensor a, Tensor b) -> Tensor");
+//   m.def("myadd_out(Tensor a, Tensor b, Tensor(a!) out) -> ()");
+}
+
+// Registers CPU implementations for mymuladd, mymul, myadd_out
+STABLE_TORCH_LIBRARY_IMPL(hirschberg_viterbi, CPU, m) {
+  m.impl("viterbi", TORCH_BOX(&viterbi_cpu));
+//   m.impl("mymul", TORCH_BOX(&mymul_cpu));
+//   m.impl("myadd_out", TORCH_BOX(&myadd_out_cpu));
+}
+
+}
+
+/*
 
     m.def("viterbi",
         &viterbi,
@@ -56,4 +94,5 @@ PYBIND11_MODULE(hirschberg_viterbi_impl, m) {
         py::arg("recall") = -1.0,
         py::arg("soft_mem_limit") = 1000LL
     );
-}
+
+*/

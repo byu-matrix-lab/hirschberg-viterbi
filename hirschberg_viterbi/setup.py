@@ -62,7 +62,7 @@ def get_extensions():
         extra_compile_args["nvcc"].append("-g")
         extra_link_args.extend(["-O0", "-g"])
 
-    this_dir = os.path.dirname(os.path.abspath(__file__))
+    this_dir = os.path.dirname(os.path.relpath(__file__))
     extensions_dir = os.path.join(this_dir, library_name, "csrc")
     sources = list(glob.glob(os.path.join(extensions_dir, "*.cpp")))
 
@@ -93,7 +93,7 @@ setup(
     install_requires=["torch>=2.10.0"],
     description="Optimized Forced Alignment for long sequences with O(n) memory usage",
     long_description=open(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "README.md")
+        os.path.join(os.path.dirname(os.path.relpath(__file__)), "..", "README.md")
     ).read(),
     long_description_content_type="text/markdown",
     url="https://github.com/byu-matrix-lab/hirschberg-viterbi",

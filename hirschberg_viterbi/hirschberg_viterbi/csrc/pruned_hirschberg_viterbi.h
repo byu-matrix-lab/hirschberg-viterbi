@@ -1,3 +1,4 @@
+/*
 #pragma once
 
 #include <pybind11/pybind11.h>
@@ -49,3 +50,4 @@ py::array_t<int32_t> pruned_hirschberg_viterbi(
     const double recall = -1.0,
     const int64_t soft_mem_limit=1000LL
 );
+*/
