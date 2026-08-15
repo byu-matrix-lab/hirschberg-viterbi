@@ -11,7 +11,7 @@ method = 'test'
 device_str = 'cpu'
 device = torch.device(device_str)
 
-seconds = 1 #200
+seconds = 1200 #200
 charset = 154
 log_probs = torch.rand((int(50*seconds), charset), device=device).log_softmax(dim=-1) # predictions predict 50 characters per second
 cleaned = torch.randint(low=1, high=charset, size=(int(12.7 * seconds),), device=device) # On average conference talks have 12.7 characters per second
@@ -48,12 +48,13 @@ print(end - start)
 
 temp1 = temp1.masked_fill((temp1%2)==0, 0)
 temp1 = torch.where(temp1 != 0, cleaned[temp1//2], temp1)
+# print((a[0] == temp1))
+print((a[0] == temp1).float().mean().item())
 
 
-print(temp1)
-print(a[0])
+a2, b = torchaudio.functional.forced_align(log_probs.unsqueeze(0).double(), cleaned.unsqueeze(0))
 
-print((a[0] == temp1))
+# print((a2[0] == temp1))
+print((a2[0] == temp1).float().mean().item())
 
-print((a[0] == temp1).all().item())
-
+print((a == a2).float().mean().item())

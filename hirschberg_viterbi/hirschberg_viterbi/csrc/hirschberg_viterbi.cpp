@@ -1,4 +1,6 @@
 
+#include <type_traits>
+
 #include <Python.h>
 
 #include <torch/csrc/stable/library.h>
@@ -7,12 +9,22 @@
 #include <torch/headeronly/core/ScalarType.h>
 #include <torch/headeronly/macros/Macros.h>
 
+// how often should this happen?
+#define RESCALE_MAX_FREQ 20
+
 #include "helpers.h"
 
 using namespace std; // TODO: remove this
 
 using torch::stable::Tensor;
 using torch::headeronly::ScalarType;
+
+template<typename scalar_t>
+void rescale_max(scalar_t* array, int size) {
+    scalar_t high = -std::numeric_limits<scalar_t>::infinity();
+    for (int i=size;i--;) high=max(high, array[i]);
+    for (int i=size;i--;) array[i]-=high;
+}
 
 template<typename backtrack_t, typename scalar_t, typename target_t>
 void _normal_viterbi_helper(
@@ -47,21 +59,24 @@ void _normal_viterbi_helper(
     const scalar_t* logits_view=logits_ptr+logits_left*logits_stride;
     for(int time=logits_left; time < logits_right; ++time, logits_view+=logits_stride) {
         swap(cur_probs, prev_probs);
-        // TODO: shift max to 0 for numerical stability on long inputs (how often?)
-
+        
         for (int ci=0;ci<max_width;++ci) {
             scalar_t& val=cur_probs[ci];
             uint8_t back = 0;
             val = prev_probs[ci];
-
+            
             if (prev_probs[ci-1] > val) val=prev_probs[ci-1], back=1;
             // text padding allows us to look back past the start of text
             if (text[ci] != text[ci-2] && prev_probs[ci-2] > val) val=prev_probs[ci-2], back=2;
-
+            
             val += logits_view[text[ci]];
             backedges.set(time-logits_left, ci, back);     
         }
-
+        
+        // if float shift max to 0 for numerical stability on long inputs
+        if constexpr (std::is_same_v<scalar_t, float>) {
+            if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_probs, max_width);
+        }
     }
     text -= text_left;
 
@@ -144,6 +159,11 @@ void _hirschberg_helper(
             val += logits_view[text[ci]];
 
         }
+
+        // if float shift max to 0 for numerical stability on long inputs
+        if constexpr (std::is_same_v<scalar_t, float>) {
+            if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_left_probs, max_width);
+        }
     }
 
     scalar_t* cur_right_probs = new scalar_t[2+max_width];
@@ -152,9 +172,10 @@ void _hirschberg_helper(
     prev_probs-=2;
     prev_probs[max_width] = prev_probs[max_width+1] = mask_val;
 
-    logits_view=logits_ptr+(logits_right-1)*logits_stride;
-    for (int time=logits_right; --time >= split;logits_view-=logits_stride) {
+    logits_view=logits_ptr+logits_right*logits_stride;
+    for (int time=logits_right;--time >= split;) {
         swap(cur_right_probs, prev_probs);
+        logits_view-=logits_stride;
 
         for (int ci=0;ci<max_width;++ci) {
             scalar_t& val=cur_right_probs[ci];
@@ -165,6 +186,11 @@ void _hirschberg_helper(
             if (text[ci] != text[ci+2] && prev_probs[ci+2] > val) val=prev_probs[ci+2];
 
             val += logits_view[text[ci]];
+        }
+
+        // if float shift max to 0 for numerical stability on long inputs
+        if constexpr (std::is_same_v<scalar_t, float>) {
+            if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_right_probs, max_width);
         }
     }
 
@@ -212,31 +238,33 @@ void _hirschberg_helper(
     );
 }
 
-
-
 Tensor viterbi_cpu(
     const Tensor& log_probs,
     const Tensor& targets,
     const int32_t blank) {
 
-    STD_TORCH_CHECK(log_probs.scalar_type() == ScalarType::Float);
-    STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int);
-    
-    // TODO: maybe allow double for log_prob data type with another template
-    // but I think ints can be used for all reasonable character sets and times
-
     auto [text, text_len, cont_log_probs, ans] =
         common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
+     
+    // allow double for log_prob data type
+    // but I think ints can be used for all reasonable character sets and times
+    auto run = [&]<typename T>() {
+        _normal_viterbi_helper<bt_full_byte, T, int32_t>(
+            cont_log_probs,
+            text,
+            ans.mutable_data_ptr<int32_t>(),
+            0,
+            cont_log_probs.size(0),
+            0,
+            text_len
+        );
+    };
 
-    _normal_viterbi_helper<bt_full_byte, float, int32_t>(
-        cont_log_probs,
-        text,
-        ans.mutable_data_ptr<int32_t>(),
-        0,
-        cont_log_probs.size(0),
-        0,
-        text_len
-    );
+    if (log_probs.scalar_type() == torch::headeronly::ScalarType::Double) {
+        run.template operator()<double>();
+    } else {
+        run.template operator()<float>();
+    }
 
     text-=2; // remove the original padding
     delete[] text;
@@ -250,25 +278,29 @@ Tensor hirschberg_viterbi_cpu(
     const int32_t blank,
     const int64_t soft_mem_limit) {
 
-    STD_TORCH_CHECK(log_probs.scalar_type() == ScalarType::Float);
-    STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int);
-    
-    // TODO: maybe allow double for log_prob data type with another template
-    // but I think ints can be used for all reasonable character sets and times
-
     auto [text, text_len, cont_log_probs, ans] =
         common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
         
-    _hirschberg_helper<bt_full_byte, float, int32_t>(
-        cont_log_probs,
-        text,
-        ans.mutable_data_ptr<int32_t>(),
-        0,
-        cont_log_probs.size(0),
-        0,
-        text_len,
-        soft_mem_limit
-    );
+    // allow double for log_prob data type
+    // but I think ints can be used for all reasonable character sets and times
+    auto run = [&]<typename T>() {
+        _hirschberg_helper<bt_full_byte, T, int32_t>(
+            cont_log_probs,
+            text,
+            ans.mutable_data_ptr<int32_t>(),
+            0,
+            cont_log_probs.size(0),
+            0,
+            text_len,
+            soft_mem_limit
+        );
+    };
+
+    if (log_probs.scalar_type() == torch::headeronly::ScalarType::Double) {
+        run.template operator()<double>();
+    } else {
+        run.template operator()<float>();
+    }
 
     text-=2; // remove the original padding
     delete[] text;
