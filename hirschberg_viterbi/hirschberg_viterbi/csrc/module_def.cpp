@@ -32,6 +32,7 @@ namespace hirschberg_viterbi {
 // Defines the operators
 STABLE_TORCH_LIBRARY(hirschberg_viterbi, m) {
   m.def("viterbi(Tensor log_probs, Tensor targets, int blank=0) -> Tensor");
+  m.def("hirschberg_viterbi(Tensor log_probs, Tensor targets, int blank=0, int soft_mem_limit=1000) -> Tensor");
 //   m.def("mymul(Tensor a, Tensor b) -> Tensor");
 //   m.def("myadd_out(Tensor a, Tensor b, Tensor(a!) out) -> ()");
 }
@@ -39,6 +40,7 @@ STABLE_TORCH_LIBRARY(hirschberg_viterbi, m) {
 // Registers CPU implementations for mymuladd, mymul, myadd_out
 STABLE_TORCH_LIBRARY_IMPL(hirschberg_viterbi, CPU, m) {
   m.impl("viterbi", TORCH_BOX(&viterbi_cpu));
+  m.impl("hirschberg_viterbi", TORCH_BOX(&hirschberg_viterbi_cpu));
 //   m.impl("mymul", TORCH_BOX(&mymul_cpu));
 //   m.impl("myadd_out", TORCH_BOX(&myadd_out_cpu));
 }

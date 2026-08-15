@@ -30,7 +30,7 @@ void _hirschberg_helper(
     int logits_right,
     int text_left,
     int text_right,
-    int64_t soft_mem_limi
+    int64_t soft_mem_limit
 );
 
 torch::stable::Tensor viterbi_cpu(
