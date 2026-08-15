@@ -171,6 +171,16 @@ template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CPU,
     const Tensor& targets,
     const int32_t blank);
 
+template<typename scalar_t>
+void rescale_max(scalar_t* array, int size) {
+    scalar_t high = -std::numeric_limits<scalar_t>::infinity();
+    for (int i=size;i--;) high=std::max(high, array[i]);
+    for (int i=size;i--;) array[i]-=high;
+}
+
+template void rescale_max<float>(float* array, int size);
+template void rescale_max<double>(double* array, int size);
+
 // adapted from scipy/xsf
 // https://github.com/scipy/xsf/blob/33768a09623689efdf7bcaf0afa167341dda0758/include/xsf/cephes/erfinv.h#L56
 // LICENSE AT https://github.com/scipy/xsf/blob/33768a09623689efdf7bcaf0afa167341dda0758/LICENSE

@@ -9,22 +9,10 @@
 #include <torch/headeronly/core/ScalarType.h>
 #include <torch/headeronly/macros/Macros.h>
 
-// how often should this happen?
-#define RESCALE_MAX_FREQ 20
-
 #include "helpers.h"
-
-using namespace std; // TODO: remove this
 
 using torch::stable::Tensor;
 using torch::headeronly::ScalarType;
-
-template<typename scalar_t>
-void rescale_max(scalar_t* array, int size) {
-    scalar_t high = -std::numeric_limits<scalar_t>::infinity();
-    for (int i=size;i--;) high=max(high, array[i]);
-    for (int i=size;i--;) array[i]-=high;
-}
 
 template<typename backtrack_t, typename scalar_t, typename target_t>
 void _normal_viterbi_helper(
@@ -58,7 +46,7 @@ void _normal_viterbi_helper(
     prev_probs+=2;
     const scalar_t* logits_view=logits_ptr+logits_left*logits_stride;
     for(int time=logits_left; time < logits_right; ++time, logits_view+=logits_stride) {
-        swap(cur_probs, prev_probs);
+        std::swap(cur_probs, prev_probs);
         
         for (int ci=0;ci<max_width;++ci) {
             scalar_t& val=cur_probs[ci];
@@ -146,7 +134,7 @@ void _hirschberg_helper(
 
     const scalar_t* logits_view=logits_ptr+logits_left*logits_stride;
     for(int time=logits_left; time <= split; ++time, logits_view+=logits_stride) {
-        swap(cur_left_probs, prev_probs);
+        std::swap(cur_left_probs, prev_probs);
 
         for (int ci=0;ci<max_width;++ci) {
             scalar_t& val=cur_left_probs[ci];
@@ -174,7 +162,7 @@ void _hirschberg_helper(
 
     logits_view=logits_ptr+logits_right*logits_stride;
     for (int time=logits_right;--time >= split;) {
-        swap(cur_right_probs, prev_probs);
+        std::swap(cur_right_probs, prev_probs);
         logits_view-=logits_stride;
 
         for (int ci=0;ci<max_width;++ci) {

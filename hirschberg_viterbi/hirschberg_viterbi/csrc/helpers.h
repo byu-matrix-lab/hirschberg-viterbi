@@ -2,6 +2,9 @@
 
 #include <torch/csrc/stable/tensor.h>
 
+// how often should this happen?
+#define RESCALE_MAX_FREQ 20
+
 using torch::stable::Tensor;
 using torch::headeronly::DeviceType;
 
@@ -36,6 +39,9 @@ std::tuple<target_t*, int, Tensor, Tensor> common_setup(
     const Tensor& log_probs,
     const Tensor& targets,
     const target_t blank = 0);
+
+template<typename scalar_t>
+void rescale_max(scalar_t* array, int size);
 
 namespace xsf {
     namespace cephes {
