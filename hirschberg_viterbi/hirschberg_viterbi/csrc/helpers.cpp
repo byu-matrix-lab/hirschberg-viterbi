@@ -9,177 +9,181 @@
 
 using torch::headeronly::ScalarType;
 
-int64_t bt_two_bits::needed_size(int n, int width) {
-    int64_t ans = (width+3)>>2;
-    return ans*n;
-}
+namespace hirschberg_viterbi {
 
-bt_two_bits::bt_two_bits(int n, int width) {
-    max_width = (width+3)>>2;
-    int64_t size = (int64_t)max_width * n;
-    data = new uint8_t[size];
-    for (int64_t i=0;i<size;++i) data[i] = 0;
-}
-
-uint8_t bt_two_bits::get(int ti, int ci) {
-    uint8_t ans = data[(int64_t)max_width*ti + (ci>>2)];
-    ans >>= ci%4*2;
-    return ans&3;
-}
-
-void bt_two_bits::set(int ti, int ci, uint8_t val) {
-    uint8_t& reg = data[(int64_t)max_width*ti + (ci>>2)];
-    // can only be called once, otherwise problems
-    ci=ci%4*2;
-    assert(!(reg&(3<<ci)));
-    reg|=val<<ci;
-}
-
-bt_two_bits::~bt_two_bits() {
-    delete[] data;
-}
-
-int64_t bt_full_byte::needed_size(int n, int width) {
-    return (int64_t)width*n;
-}
-
-bt_full_byte::bt_full_byte(int n, int width) {
-    max_width = width;
-    int64_t size = (int64_t)width * n;
-    data = new uint8_t[size];
-    for (int64_t i=0;i<size;++i) data[i] = 0;
-}
-
-uint8_t bt_full_byte::get(int ti, int ci) {
-    return data[(int64_t)max_width*ti + ci];
-}
-
-void bt_full_byte::set(int ti, int ci, uint8_t val) {
-    data[(int64_t)max_width*ti + ci] = val;
-}
-
-bt_full_byte::~bt_full_byte() {
-    delete[] data;
-}
-
-template<typename target_t>
-std::pair<target_t*, int> add_blanks(
-    const Tensor& targets,
-    const target_t blank) {
-    int n = targets.size(0);
-    target_t* ans = new target_t[2*n+5];
-
-    ans += 2;
-    auto* const targ_view = targets.const_data_ptr<target_t>();
-    for (int i=0;i<n;++i) {
-        ans[2*i] = blank;
-        ans[2*i+1] = targ_view[i];
-    }
-    ans[2*n] = blank;
-
-    // add padding
-    ans[-2]=ans[-1]=blank;
-    ans[2*n+1] = ans[2*n+2] = blank;
-
-    return {ans, 2*n+1};
-}
-
-template std::pair<int32_t*, int> add_blanks<int32_t>(
-    const Tensor& targets,
-    const int32_t blank);
-
-template<DeviceType device, typename target_t>
-std::tuple<target_t*, int, Tensor, Tensor> common_setup(
-    const Tensor& log_probs,
-    const Tensor& targets,
-    const target_t blank) {
-    STD_TORCH_CHECK(log_probs.scalar_type() == ScalarType::Float
-        || log_probs.scalar_type() == torch::headeronly::ScalarType::Double);
-    STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int);
-
-    STD_TORCH_CHECK(log_probs.device().type() == device);
-    STD_TORCH_CHECK(log_probs.device() == targets.device());
-
-    STD_TORCH_CHECK(log_probs.dim() == 2, "log_probs must have shape [sequence length, character set].");
-    STD_TORCH_CHECK(targets.dim() == 1, "targets must have shape [sequence length].");
-    
-    const target_t charset_size = (target_t)log_probs.size(1);
-    STD_TORCH_CHECK(
-        0 <= blank && blank < charset_size, 
-        "Expected blank to be in range [0, ",
-        charset_size,
-        ")."
-    );
-
-    // make tensors contiguous for caching purposes
-    auto cont_targets = torch::stable::contiguous(targets);
-
-    // check targ_pointer values
-    int num_repeats = 0;
-    {
-        const target_t* targ_pointer;
-        if constexpr (device == DeviceType::CPU) {
-           targ_pointer = cont_targets.const_data_ptr<target_t>();
-        } else {
-            assert (false); // not implemented yet
-            // copy to CPU and give pointer there
-            // could make a kernel, but likely negligable gains
-        }
-        // TODO: copy to cpu if needed here
-        target_t pval = -1;
-        for (int i=0;i<cont_targets.size(0);++i) {
-            target_t val = targ_pointer[i];
-            STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
-            STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
-            num_repeats+=(val==pval);
-            pval=val;
-        }
+    int64_t bt_two_bits::needed_size(int n, int width) {
+        int64_t ans = (width+3)>>2;
+        return ans*n;
     }
 
-    STD_TORCH_CHECK(
-        num_repeats + cont_targets.size(0) <= log_probs.size(0),
-        "Target sequence too long for CTC. Found log_probs length ",
-        log_probs.size(0),
-        " < target length ",
-        cont_targets.size(0),
-        " + ",
-        num_repeats,
-        " repeats."
-    );
+    bt_two_bits::bt_two_bits(int n, int width) {
+        max_width = (width+3)>>2;
+        int64_t size = (int64_t)max_width * n;
+        data = new uint8_t[size];
+        for (int64_t i=0;i<size;++i) data[i] = 0;
+    }
 
-    const int64_t T = log_probs.size(0);
+    uint8_t bt_two_bits::get(int ti, int ci) {
+        uint8_t ans = data[(int64_t)max_width*ti + (ci>>2)];
+        ans >>= ci%4*2;
+        return ans&3;
+    }
 
-    // this allocates memory
-    auto [text, text_len] = add_blanks<int32_t>(cont_targets, blank);
-    // Either no more input assertions, or use smart pointers instead
-    // otherwise text will leak
+    void bt_two_bits::set(int ti, int ci, uint8_t val) {
+        uint8_t& reg = data[(int64_t)max_width*ti + (ci>>2)];
+        // can only be called once, otherwise problems
+        ci=ci%4*2;
+        assert(!(reg&(3<<ci)));
+        reg|=val<<ci;
+    }
 
-    auto ans = torch::stable::empty(
-        {T},
-        torch::headeronly::ScalarType::Int,
-        torch::headeronly::Layout::Strided,
-        log_probs.device(),
-        false // don't pin memory
-    );
+    bt_two_bits::~bt_two_bits() {
+        delete[] data;
+    }
 
-    auto cont_log_probs = torch::stable::contiguous(log_probs);
-    return {text, text_len, cont_log_probs, ans};
+    int64_t bt_full_byte::needed_size(int n, int width) {
+        return (int64_t)width*n;
+    }
+
+    bt_full_byte::bt_full_byte(int n, int width) {
+        max_width = width;
+        int64_t size = (int64_t)width * n;
+        data = new uint8_t[size];
+        for (int64_t i=0;i<size;++i) data[i] = 0;
+    }
+
+    uint8_t bt_full_byte::get(int ti, int ci) {
+        return data[(int64_t)max_width*ti + ci];
+    }
+
+    void bt_full_byte::set(int ti, int ci, uint8_t val) {
+        data[(int64_t)max_width*ti + ci] = val;
+    }
+
+    bt_full_byte::~bt_full_byte() {
+        delete[] data;
+    }
+
+    template<typename target_t>
+    std::pair<target_t*, int> add_blanks(
+        const Tensor& targets,
+        const target_t blank) {
+        int n = targets.size(0);
+        target_t* ans = new target_t[2*n+5];
+
+        ans += 2;
+        auto* const targ_view = targets.const_data_ptr<target_t>();
+        for (int i=0;i<n;++i) {
+            ans[2*i] = blank;
+            ans[2*i+1] = targ_view[i];
+        }
+        ans[2*n] = blank;
+
+        // add padding
+        ans[-2]=ans[-1]=blank;
+        ans[2*n+1] = ans[2*n+2] = blank;
+
+        return {ans, 2*n+1};
+    }
+
+    template std::pair<int32_t*, int> add_blanks<int32_t>(
+        const Tensor& targets,
+        const int32_t blank);
+
+    template<DeviceType device, typename target_t>
+    std::tuple<target_t*, int, Tensor, Tensor> common_setup(
+        const Tensor& log_probs,
+        const Tensor& targets,
+        const target_t blank) {
+        STD_TORCH_CHECK(log_probs.scalar_type() == ScalarType::Float
+            || log_probs.scalar_type() == torch::headeronly::ScalarType::Double);
+        STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int);
+
+        STD_TORCH_CHECK(log_probs.device().type() == device);
+        STD_TORCH_CHECK(log_probs.device() == targets.device());
+
+        STD_TORCH_CHECK(log_probs.dim() == 2, "log_probs must have shape [sequence length, character set].");
+        STD_TORCH_CHECK(targets.dim() == 1, "targets must have shape [sequence length].");
+        
+        const target_t charset_size = (target_t)log_probs.size(1);
+        STD_TORCH_CHECK(
+            0 <= blank && blank < charset_size, 
+            "Expected blank to be in range [0, ",
+            charset_size,
+            ")."
+        );
+
+        // make tensors contiguous for caching purposes
+        auto cont_targets = torch::stable::contiguous(targets);
+
+        // check targ_pointer values
+        int num_repeats = 0;
+        {
+            const target_t* targ_pointer;
+            if constexpr (device == DeviceType::CPU) {
+            targ_pointer = cont_targets.const_data_ptr<target_t>();
+            } else {
+                assert (false); // not implemented yet
+                // copy to CPU and give pointer there
+                // could make a kernel, but likely negligable gains
+            }
+            // TODO: copy to cpu if needed here
+            target_t pval = -1;
+            for (int i=0;i<cont_targets.size(0);++i) {
+                target_t val = targ_pointer[i];
+                STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
+                STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
+                num_repeats+=(val==pval);
+                pval=val;
+            }
+        }
+
+        STD_TORCH_CHECK(
+            num_repeats + cont_targets.size(0) <= log_probs.size(0),
+            "Target sequence too long for CTC. Found log_probs length ",
+            log_probs.size(0),
+            " < target length ",
+            cont_targets.size(0),
+            " + ",
+            num_repeats,
+            " repeats."
+        );
+
+        const int64_t T = log_probs.size(0);
+
+        // this allocates memory
+        auto [text, text_len] = add_blanks<int32_t>(cont_targets, blank);
+        // Either no more input assertions, or use smart pointers instead
+        // otherwise text will leak
+
+        auto ans = torch::stable::empty(
+            {T},
+            torch::headeronly::ScalarType::Int,
+            torch::headeronly::Layout::Strided,
+            log_probs.device(),
+            false // don't pin memory
+        );
+
+        auto cont_log_probs = torch::stable::contiguous(log_probs);
+        return {text, text_len, cont_log_probs, ans};
+    }
+
+    template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
+        const Tensor& log_probs,
+        const Tensor& targets,
+        const int32_t blank);
+
+    template<typename scalar_t>
+    void rescale_max(scalar_t* array, int size) {
+        scalar_t high = -std::numeric_limits<scalar_t>::infinity();
+        for (int i=size;i--;) high=std::max(high, array[i]);
+        for (int i=size;i--;) array[i]-=high;
+    }
+
+    template void rescale_max<float>(float* array, int size);
+    template void rescale_max<double>(double* array, int size);
+
 }
-
-template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
-    const Tensor& log_probs,
-    const Tensor& targets,
-    const int32_t blank);
-
-template<typename scalar_t>
-void rescale_max(scalar_t* array, int size) {
-    scalar_t high = -std::numeric_limits<scalar_t>::infinity();
-    for (int i=size;i--;) high=std::max(high, array[i]);
-    for (int i=size;i--;) array[i]-=high;
-}
-
-template void rescale_max<float>(float* array, int size);
-template void rescale_max<double>(double* array, int size);
 
 // adapted from scipy/xsf
 // https://github.com/scipy/xsf/blob/33768a09623689efdf7bcaf0afa167341dda0758/include/xsf/cephes/erfinv.h#L56

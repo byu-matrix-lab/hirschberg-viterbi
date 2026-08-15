@@ -49,25 +49,6 @@ STABLE_TORCH_LIBRARY_IMPL(hirschberg_viterbi, CPU, m) {
 
 /*
 
-    m.def("viterbi",
-        &viterbi,
-        "Base Viterbi Alignment",
-        py::arg("log_probs"),
-        py::arg("targets"),
-        py::kw_only(),
-        py::arg("blank") = 0
-    );
-
-    m.def("hirschberg_viterbi",
-        &hirschberg_viterbi,
-        "Hirschberg Viterbi Alignment",
-        py::arg("log_probs"),
-        py::arg("targets"),
-        py::kw_only(),
-        py::arg("blank") = 0,
-        py::arg("soft_mem_limit") = 1000LL
-    );
-
     m.def("pruned_viterbi",
         &pruned_viterbi,
         "Pruned Viterbi Alignment",
