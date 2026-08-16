@@ -239,8 +239,8 @@ namespace hirschberg_viterbi {
         
         // allow double for log_prob data type
         // but I think ints can be used for all reasonable character sets and times
-        auto run = [&]<typename T>() {
-            _normal_viterbi_helper<bt_full_byte, T, int32_t>(
+        auto run = [&]<typename scalar_t>() {
+            _normal_viterbi_helper<bt_full_byte, scalar_t, int32_t>(
                 cont_log_probs,
                 text,
                 ans.mutable_data_ptr<int32_t>(),
@@ -274,8 +274,8 @@ namespace hirschberg_viterbi {
             
         // allow double for log_prob data type
         // but I think ints can be used for all reasonable character sets and times
-        auto run = [&]<typename T>() {
-            _hirschberg_helper<bt_full_byte, T, int32_t>(
+        auto run = [&]<typename scalar_t>() {
+            _hirschberg_helper<bt_full_byte, scalar_t, int32_t>(
                 cont_log_probs,
                 text,
                 ans.mutable_data_ptr<int32_t>(),
