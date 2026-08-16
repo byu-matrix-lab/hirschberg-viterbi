@@ -5,9 +5,6 @@
 // how often should this happen?
 #define RESCALE_MAX_FREQ 20
 
-using torch::stable::Tensor;
-using torch::headeronly::DeviceType;
-
 namespace hirschberg_viterbi {
 
     // I did not see any gains from using this with hirschberg viterbi
@@ -33,13 +30,13 @@ namespace hirschberg_viterbi {
 
     template<typename target_t>
     std::pair<target_t*, int> add_blanks(
-        const Tensor& targets,
+        const torch::stable::Tensor& targets,
         const target_t blank);
 
-    template<DeviceType device, typename target_t>
-    std::tuple<target_t*, int, Tensor, Tensor> common_setup(
-        const Tensor& log_probs,
-        const Tensor& targets,
+    template<torch::headeronly::DeviceType device, typename target_t>
+    std::tuple<target_t*, int, torch::stable::Tensor, torch::stable::Tensor> common_setup(
+        const torch::stable::Tensor& log_probs,
+        const torch::stable::Tensor& targets,
         const target_t blank = 0);
 
     template<typename scalar_t>

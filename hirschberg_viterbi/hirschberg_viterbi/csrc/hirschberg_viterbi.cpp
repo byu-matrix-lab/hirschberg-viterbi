@@ -13,6 +13,7 @@
 
 using torch::stable::Tensor;
 using torch::headeronly::ScalarType;
+using torch::headeronly::DeviceType;
 
 namespace hirschberg_viterbi {
 

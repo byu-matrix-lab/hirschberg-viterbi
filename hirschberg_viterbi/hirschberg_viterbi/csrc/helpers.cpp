@@ -8,6 +8,8 @@
 #include "helpers.h"
 
 using torch::headeronly::ScalarType;
+using torch::stable::Tensor;
+using torch::headeronly::DeviceType;
 
 namespace hirschberg_viterbi {
 
