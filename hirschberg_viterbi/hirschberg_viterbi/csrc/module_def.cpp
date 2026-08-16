@@ -34,6 +34,7 @@ namespace hirschberg_viterbi {
     m.def("viterbi(Tensor log_probs, Tensor targets, int blank=0) -> Tensor");
     m.def("hirschberg_viterbi(Tensor log_probs, Tensor targets, int blank=0, int soft_mem_limit=1000) -> Tensor");
     m.def("pruned_viterbi(Tensor log_probs, Tensor targets, int blank=0, float var_rat=3.7, float conf=0.99, float accuracy=0.97, float precision=-1.0, float recall=-1.0, float padding=5.0) -> Tensor");
+    m.def("pruned_hirschberg_viterbi(Tensor log_probs, Tensor targets, int blank=0, float var_rat=3.7, float conf=0.99, float accuracy=0.97, float precision=-1.0, float recall=-1.0, float padding=5.0, int soft_mem_limit=1000) -> Tensor");
     }
 
     // Registers CPU implementations for mymuladd, mymul, myadd_out
@@ -41,23 +42,6 @@ namespace hirschberg_viterbi {
     m.impl("viterbi", TORCH_BOX(&viterbi_cpu));
     m.impl("hirschberg_viterbi", TORCH_BOX(&hirschberg_viterbi_cpu));
     m.impl("pruned_viterbi", TORCH_BOX(&pruned_viterbi_cpu));
+    m.impl("pruned_hirschberg_viterbi", TORCH_BOX(&pruned_hirschberg_viterbi_cpu));
     }
 }
-
-/*
-    m.def("pruned_hirschberg_viterbi",
-        &pruned_hirschberg_viterbi,
-        "Pruned Hirschberg Viterbi Alignment",
-        py::arg("log_probs"),
-        py::arg("targets"),
-        py::kw_only(),
-        py::arg("blank") = 0,
-        py::arg("var_rat") = 3.7,
-        py::arg("conf") = 0.99,
-        py::arg("accuracy") = 0.97,
-        py::arg("precision") = -1.0,
-        py::arg("recall") = -1.0,
-        py::arg("soft_mem_limit") = 1000LL
-    );
-
-*/
