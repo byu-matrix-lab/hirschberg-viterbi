@@ -11,7 +11,7 @@ method = 'test'
 device_str = 'cpu'
 device = torch.device(device_str)
 
-seconds = 1200 #200
+seconds = 100 #200
 charset = 154
 log_probs = torch.rand((int(50*seconds), charset), device=device).log_softmax(dim=-1) # predictions predict 50 characters per second
 cleaned = torch.randint(low=1, high=charset, size=(int(12.7 * seconds),), device=device) # On average conference talks have 12.7 characters per second
@@ -21,7 +21,7 @@ cleaned = cleaned.int()
 
 start = time.time()
 
-temp1 = torch.ops.hirschberg_viterbi.hirschberg_viterbi(log_probs, cleaned)
+temp1 = torch.ops.hirschberg_viterbi.pruned_viterbi(log_probs, cleaned, accuracy=0.99)
 
 # print()
 # print()
