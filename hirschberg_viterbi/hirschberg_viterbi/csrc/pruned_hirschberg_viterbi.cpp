@@ -176,6 +176,9 @@ namespace hirschberg_viterbi {
             prev_probs-=shift;
             text -= lower_bounds[time];
 
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
+                if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_probs, cend);
+            }
         }
 
         int cur = text_right-1;
@@ -303,6 +306,10 @@ namespace hirschberg_viterbi {
             }
             prev_probs-=shift;
             text -= lower_bounds[time];
+
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
+                if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_left_probs, cend);
+            }
         }
 
         scalar_t* cur_right_probs = new scalar_t[4+max_width];
@@ -346,6 +353,10 @@ namespace hirschberg_viterbi {
             }
             prev_probs-=shift;
             text -= lower_bounds[time];
+
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
+                if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_right_probs+cstart, cend-cstart);
+            }
         }
 
         int pivot=0;
