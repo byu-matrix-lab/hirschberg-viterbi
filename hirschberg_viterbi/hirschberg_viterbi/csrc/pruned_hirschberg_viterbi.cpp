@@ -157,7 +157,6 @@ namespace hirschberg_viterbi {
             // excluding what will be done later
             for (int ci=cend;ci<widths[time]+2;++ci) cur_probs[ci] = mask_val;
 
-            // TODO: just offset text within here
             text += lower_bounds[time];
             prev_probs+=shift;
             for (int ci=0;ci<cend;++ci) {
@@ -276,7 +275,6 @@ namespace hirschberg_viterbi {
         for(int time=logits_left; time <= split; ++time, logits_view+=logits_stride) {
             swap(cur_left_probs, prev_probs);
 
-            // TODO: move these outside of the loop
             int pstart = time>logits_left ? lower_bounds[time-1] : text_left;
             int pwidth = time>logits_left ? widths[time-1] : 1;
 
@@ -322,7 +320,6 @@ namespace hirschberg_viterbi {
             swap(cur_right_probs, prev_probs);
             logits_view-=logits_stride;
 
-            // TODO: move these outside of the loop
             int pstart = time<logits_right-1 ? lower_bounds[time+1] : text_right-1;
             int pwidth = time<logits_right-1 ? widths[time+1] : 1;
 
