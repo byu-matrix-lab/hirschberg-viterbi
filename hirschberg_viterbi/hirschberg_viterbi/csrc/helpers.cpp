@@ -12,60 +12,6 @@ using torch::stable::Tensor;
 using torch::headeronly::DeviceType;
 
 namespace hirschberg_viterbi {
-
-    int64_t bt_two_bits::needed_size(int n, int width) {
-        int64_t ans = (width+3)>>2;
-        return ans*n;
-    }
-
-    bt_two_bits::bt_two_bits(int n, int width) {
-        max_width = (width+3)>>2;
-        int64_t size = (int64_t)max_width * n;
-        data = new uint8_t[size];
-        for (int64_t i=0;i<size;++i) data[i] = 0;
-    }
-
-    uint8_t bt_two_bits::get(int ti, int ci) {
-        uint8_t ans = data[(int64_t)max_width*ti + (ci>>2)];
-        ans >>= ci%4*2;
-        return ans&3;
-    }
-
-    void bt_two_bits::set(int ti, int ci, uint8_t val) {
-        uint8_t& reg = data[(int64_t)max_width*ti + (ci>>2)];
-        // can only be called once, otherwise problems
-        ci=ci%4*2;
-        assert(!(reg&(3<<ci)));
-        reg|=val<<ci;
-    }
-
-    bt_two_bits::~bt_two_bits() {
-        delete[] data;
-    }
-
-    int64_t bt_full_byte::needed_size(int n, int width) {
-        return (int64_t)width*n;
-    }
-
-    bt_full_byte::bt_full_byte(int n, int width) {
-        max_width = width;
-        int64_t size = (int64_t)width * n;
-        data = new uint8_t[size];
-        for (int64_t i=0;i<size;++i) data[i] = 0;
-    }
-
-    uint8_t bt_full_byte::get(int ti, int ci) {
-        return data[(int64_t)max_width*ti + ci];
-    }
-
-    void bt_full_byte::set(int ti, int ci, uint8_t val) {
-        data[(int64_t)max_width*ti + ci] = val;
-    }
-
-    bt_full_byte::~bt_full_byte() {
-        delete[] data;
-    }
-
     template<typename target_t>
     std::pair<target_t*, int> add_blanks(
         const Tensor& targets,
@@ -177,17 +123,6 @@ namespace hirschberg_viterbi {
         const Tensor& log_probs,
         const Tensor& targets,
         const int32_t blank);
-
-    template<typename scalar_t>
-    void rescale_max(scalar_t* array, int size) {
-        scalar_t high = -std::numeric_limits<scalar_t>::infinity();
-        for (int i=size;i--;) high=std::max(high, array[i]);
-        for (int i=size;i--;) array[i]-=high;
-    }
-
-    template void rescale_max<float>(float* array, int size);
-    template void rescale_max<double>(double* array, int size);
-
 }
 
 // adapted from scipy/xsf
