@@ -63,7 +63,7 @@ namespace hirschberg_viterbi {
         int duration,
         int n,
         double var_rat,
-        double conf,
+        double confidence,
         double accuracy,
         double precision,
         double recall,
@@ -72,9 +72,9 @@ namespace hirschberg_viterbi {
         if (recall == -1) recall = accuracy;
 
         // Compute the inverse normal cdf for confidence adjustment
-        // double p = 1 - (1 - conf) / 2 / n;
+        // double p = 1 - (1 - confidence) / 2 / n;
         // double stds = erfinv(2*p-1) * sqrt(2);
-        double stds = sqrt(2) * xsf::cephes::erfcinv((1 - conf) / n);
+        double stds = sqrt(2) * xsf::cephes::erfcinv((1 - confidence) / n);
 
         scalar_t* lower_bounds = new scalar_t[duration];
         scalar_t* upper_bounds = new scalar_t[duration];
@@ -411,7 +411,7 @@ namespace hirschberg_viterbi {
         const Tensor& targets,
         const int32_t blank = 0,
         const double var_rat = 3.7,
-        const double conf = 0.99,
+        const double confidence = 0.99,
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
@@ -426,7 +426,7 @@ namespace hirschberg_viterbi {
             T,
             targets.size(0),
             var_rat,
-            conf,
+            confidence,
             accuracy,
             precision,
             recall,
@@ -479,7 +479,7 @@ namespace hirschberg_viterbi {
         const Tensor& targets,
         const int32_t blank = 0,
         const double var_rat = 3.7,
-        const double conf = 0.99,
+        const double confidence = 0.99,
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
@@ -495,7 +495,7 @@ namespace hirschberg_viterbi {
             T,
             targets.size(0),
             var_rat,
-            conf,
+            confidence,
             accuracy,
             precision,
             recall,
