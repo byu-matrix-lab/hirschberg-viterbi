@@ -106,6 +106,9 @@ namespace hirschberg_viterbi {
 
         STD_TORCH_CHECK(log_probs.dim() == 2, "log_probs must have shape [sequence length, character set].");
         STD_TORCH_CHECK(targets.dim() == 1, "targets must have shape [sequence length].");
+
+        STD_TORCH_CHECK(log_probs.size(0) > 0, "log_probs must be not be empty.");
+        STD_TORCH_CHECK(targets.size(0) > 0, "targets must be not be empty.");
         
         const target_t charset_size = (target_t)log_probs.size(1);
         STD_TORCH_CHECK(

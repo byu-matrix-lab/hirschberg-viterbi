@@ -45,15 +45,12 @@ def torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, meth
         torch._check(target_lengths.dim() == 1, lambda: "Target lengths should have shape [batch size]")
         sliced_targets = sliced_targets[:target_lengths[0]]
 
-    # TODO: check for empty input sequence
-
     alignment = method.default(sliced_log_probs, sliced_targets, **kwargs)
 
     # -1 handles final blank > len sliced_targets
     labels = torch.where((alignment%2)==0, blank, sliced_targets[(alignment-1)//2])
     confs = sliced_log_probs.gather(1, labels.unsqueeze(1)).squeeze(1)
 
-    # post process to get output
     return labels.unsqueeze(0), confs.unsqueeze(0)
 
 def viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
