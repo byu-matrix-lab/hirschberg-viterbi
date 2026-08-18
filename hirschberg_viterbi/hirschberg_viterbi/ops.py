@@ -1,10 +1,6 @@
 import torch
 from torch import Tensor
 
-# TODO: map to torchaudio signature
-
-# TODO: Add wrapper functions and register fake ones here
-
 # determines what gets imported by wild cart from this file
 __all__ = [
     "raw_viterbi",
@@ -68,13 +64,11 @@ def pruned_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | N
 def pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
     return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.pruned_hirschberg_viterbi, **kwargs)
 
-# torchaudio.functional.forced_align(log_probs: Tensor, targets: Tensor, input_lengths: Optional[Tensor] = None, targets_lengths: Optional[Tensor] = None, blank: int = 0) 
-
 # Registers a FakeTensor kernel (aka "meta kernel", "abstract impl")
 # that describes what the properties of the output Tensor are given
 # the properties of the input Tensor. The FakeTensor kernel is necessary
 # for the op to work performantly with torch.compile.
-def fake_checker(log_probs, targets):
+def fake_checker(log_probs, targets, **kwargs):
     torch._check(log_probs.dim() == 2)
     torch._check(targets.dim() == 1)
     torch._check(log_probs.dtype == torch.float or log_probs.dtype == torch.double)
@@ -82,7 +76,7 @@ def fake_checker(log_probs, targets):
     torch._check(log_probs.device == targets.device)
     return torch.empty((log_probs.size(0),), dtype=targets.dtype, device=log_probs.device)
 
-@torch.library.register_fake("hirschberg_viterbi::viterbi")
-def _(log_probs, targets, blank=0):
-    return fake_checker(log_probs, targets)
-
+torch.library.register_fake("hirschberg_viterbi::viterbi", fake_checker)
+torch.library.register_fake("hirschberg_viterbi::hirschberg_viterbi", fake_checker)
+torch.library.register_fake("hirschberg_viterbi::pruned_viterbi", fake_checker)
+torch.library.register_fake("hirschberg_viterbi::pruned_hirschberg_viterbi", fake_checker)
