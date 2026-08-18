@@ -11,7 +11,10 @@ __all__ = [
     "raw_hirschberg_viterbi",
     "raw_pruned_viterbi",
     "raw_pruned_hirschberg_viterbi",
-    "viterbi"
+    "viterbi",
+    "hirschberg_viterbi",
+    "pruned_viterbi",
+    "pruned_hirschberg_viterbi"
 ]
 
 # TODO: current kernel does not support input lengths parameter for compilation
@@ -55,6 +58,15 @@ def torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, meth
 
 def viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
     return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.viterbi, **kwargs)
+
+def hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+    return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.hirschberg_viterbi, **kwargs)
+
+def pruned_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+    return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.pruned_viterbi, **kwargs)
+
+def pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+    return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.pruned_hirschberg_viterbi, **kwargs)
 
 # torchaudio.functional.forced_align(log_probs: Tensor, targets: Tensor, input_lengths: Optional[Tensor] = None, targets_lengths: Optional[Tensor] = None, blank: int = 0) 
 
