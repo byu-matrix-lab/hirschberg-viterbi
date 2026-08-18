@@ -65,7 +65,7 @@ namespace hirschberg_viterbi {
             }
             
             // if float shift max to 0 for numerical stability on long inputs
-            if constexpr (std::is_same_v<scalar_t, float>) {
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
                 if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_probs, max_width);
             }
         }
@@ -152,7 +152,7 @@ namespace hirschberg_viterbi {
             }
 
             // if float shift max to 0 for numerical stability on long inputs
-            if constexpr (std::is_same_v<scalar_t, float>) {
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
                 if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_left_probs, max_width);
             }
         }
@@ -180,7 +180,7 @@ namespace hirschberg_viterbi {
             }
 
             // if float shift max to 0 for numerical stability on long inputs
-            if constexpr (std::is_same_v<scalar_t, float>) {
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
                 if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_right_probs, max_width);
             }
         }
