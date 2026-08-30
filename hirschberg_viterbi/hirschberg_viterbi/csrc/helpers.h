@@ -88,6 +88,13 @@ namespace hirschberg_viterbi {
         for (int i=size;i--;) array[i]-=high;
     }
 
+    void pruning_check(
+        double var_rat,
+        double confidence, 
+        double accuracy,
+        double precision,
+        double recall,
+        double padding);
 }
 
 

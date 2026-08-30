@@ -19,16 +19,16 @@ cleaned = cleaned.int()
 
 # warp up the code, initial module load has around 140 ms latency
 # didn't see this latency with torchaudio, but included for fair comparison
-hirschberg_viterbi.hirschberg_viterbi(log_probs[:100].unsqueeze(0), cleaned[:10].unsqueeze(0), blank=0)
+hirschberg_viterbi.hirschberg_viterbi(log_probs[:100].unsqueeze(0), cleaned[:10].unsqueeze(0))
 torchaudio.functional.forced_align(log_probs[:100].unsqueeze(0), cleaned[:10].unsqueeze(0))
 
 start = time.time()
 
-my_align, my_confs = hirschberg_viterbi.pruned_hirschberg_viterbi(log_probs.unsqueeze(0), cleaned.unsqueeze(0), blank=0, soft_mem_limit=1000)
+my_align, my_confs = hirschberg_viterbi.hirschberg_viterbi(log_probs.unsqueeze(0), cleaned.unsqueeze(0))
 
 end = time.time()
 
-print('Pruned Hirschberg-Viterbi runtime (s):', end - start)
+print('Hirschberg-Viterbi runtime (s):', end - start)
 
 start = time.time()
 a2, b = torchaudio.functional.forced_align(log_probs.unsqueeze(0).double(), cleaned.unsqueeze(0))

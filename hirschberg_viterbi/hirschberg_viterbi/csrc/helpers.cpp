@@ -123,6 +123,22 @@ namespace hirschberg_viterbi {
         const Tensor& log_probs,
         const Tensor& targets,
         const int32_t blank);
+
+
+    void pruning_check(
+        double var_rat,
+        double confidence, 
+        double accuracy,
+        double precision,
+        double recall,
+        double padding) {
+        STD_TORCH_CHECK(0.0 <= var_rat, "Variance ratio (var_rat) must be non negative.");
+        STD_TORCH_CHECK(0.0 <= confidence && confidence <= 1.0, "Confidence must be in [0, 1]");
+        STD_TORCH_CHECK(0.1 <= accuracy && accuracy <= 1.0, "Accuracy must be in [0.1, 1]. Use the unpruned implementation if accuracy < 10%.");
+        STD_TORCH_CHECK(precision == -1 || 0.1 <= precision && precision <= 1.0, "Precision must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if precision < 10%.");
+        STD_TORCH_CHECK(recall == -1 || 0.1 <= recall && recall <= 1.0, "Recall must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if recall < 10%.");
+        STD_TORCH_CHECK(0.0 <= padding, "Padding must be non-negative.");
+    }
 }
 
 // adapted from scipy/xsf

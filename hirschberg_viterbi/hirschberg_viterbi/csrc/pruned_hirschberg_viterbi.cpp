@@ -417,6 +417,8 @@ namespace hirschberg_viterbi {
         const double recall = -1.0,
         const double padding = 5.0) {
 
+        pruning_check(var_rat, confidence, accuracy, precision, recall, padding);
+
         auto [text, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
         
@@ -486,11 +488,13 @@ namespace hirschberg_viterbi {
         const double padding = 5.0,
         const int64_t soft_mem_limit=1000LL) {
 
+        pruning_check(var_rat, confidence, accuracy, precision, recall, padding);
+
         auto [text, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
         
         int32_t T = cont_log_probs.size(0);
-
+        
         auto [lower_bounds, upper_bounds] = calculate_bounds<int32_t>(
             T,
             targets.size(0),
@@ -541,7 +545,6 @@ namespace hirschberg_viterbi {
         delete[] widths;
 
         return ans;
-
 
     }
 
