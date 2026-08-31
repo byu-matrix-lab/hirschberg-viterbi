@@ -269,7 +269,7 @@ namespace hirschberg_viterbi {
         prev_probs+=2;
 
         // split-1 is not needed, but done to make sure it matches the python impl during testing
-        int split = logits_left + logits_right-1 >> 1;
+        int split = (logits_left + logits_right-1) >> 1;
 
         const scalar_t* logits_view=logits_ptr+logits_left*logits_stride;
         for(int time=logits_left; time <= split; ++time, logits_view+=logits_stride) {

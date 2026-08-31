@@ -2,6 +2,7 @@
 #include <torch/csrc/stable/library.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
+#include <torch/csrc/stable/device.h>
 #include <torch/headeronly/core/ScalarType.h>
 #include <torch/headeronly/macros/Macros.h>
 
@@ -74,9 +75,12 @@ namespace hirschberg_viterbi {
             if constexpr (device == DeviceType::CPU) {
             targ_pointer = cont_targets.const_data_ptr<target_t>();
             } else {
-                assert (false); // not implemented yet
-                // copy to CPU and give pointer there
-                // could make a kernel, but likely negligable gains
+                assert(false);
+                // copy to cpu for this check (cpu targets might be needed elsewhere if basecase is solved on cpu)
+                // auto cpu_device = torch::stable::Device("cpu");
+                // auto cpu_targets = torch::stable::to(cont_targets, cpu_device);
+                // targ_pointer = cpu_targets.const_data_ptr<target_t>();
+                // still deciding whether this should be be a kernel to avoid data movement
             }
             // TODO: copy to cpu if needed here
             target_t pval = -1;
@@ -125,6 +129,12 @@ namespace hirschberg_viterbi {
         const int32_t blank);
 
 
+    // template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
+    //     const Tensor& log_probs,
+    //     const Tensor& targets,
+    //     const int32_t blank);
+
+
     void pruning_check(
         double var_rat,
         double confidence, 
@@ -135,8 +145,8 @@ namespace hirschberg_viterbi {
         STD_TORCH_CHECK(0.0 <= var_rat, "Variance ratio (var_rat) must be non negative.");
         STD_TORCH_CHECK(0.0 <= confidence && confidence <= 1.0, "Confidence must be in [0, 1]");
         STD_TORCH_CHECK(0.1 <= accuracy && accuracy <= 1.0, "Accuracy must be in [0.1, 1]. Use the unpruned implementation if accuracy < 10%.");
-        STD_TORCH_CHECK(precision == -1 || 0.1 <= precision && precision <= 1.0, "Precision must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if precision < 10%.");
-        STD_TORCH_CHECK(recall == -1 || 0.1 <= recall && recall <= 1.0, "Recall must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if recall < 10%.");
+        STD_TORCH_CHECK(precision == -1 || (0.1 <= precision && precision <= 1.0), "Precision must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if precision < 10%.");
+        STD_TORCH_CHECK(recall == -1 || (0.1 <= recall && recall <= 1.0), "Recall must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if recall < 10%.");
         STD_TORCH_CHECK(0.0 <= padding, "Padding must be non-negative.");
     }
 }
