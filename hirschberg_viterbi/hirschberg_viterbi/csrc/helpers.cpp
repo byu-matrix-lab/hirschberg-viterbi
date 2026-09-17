@@ -46,7 +46,7 @@ namespace hirschberg_viterbi {
         const target_t blank) {
         STD_TORCH_CHECK(log_probs.scalar_type() == ScalarType::Float
             || log_probs.scalar_type() == torch::headeronly::ScalarType::Double);
-        STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int);
+        STD_TORCH_CHECK(targets.scalar_type() == ScalarType::Int, "targets must have type int32");
 
         STD_TORCH_CHECK(log_probs.device().type() == device);
         STD_TORCH_CHECK(log_probs.device() == targets.device());

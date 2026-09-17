@@ -415,7 +415,7 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
-        const double padding = 5.0) {
+        const double padding = 375.0) {
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, padding);
 
@@ -485,7 +485,7 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
-        const double padding = 5.0,
+        const double padding = 375.0,
         const int64_t soft_mem_limit=1000LL) {
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, padding);

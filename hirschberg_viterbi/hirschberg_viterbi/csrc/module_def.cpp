@@ -33,8 +33,8 @@ namespace hirschberg_viterbi {
     STABLE_TORCH_LIBRARY(hirschberg_viterbi, m) {
     m.def("viterbi(Tensor log_probs, Tensor targets, int blank=0) -> Tensor");
     m.def("hirschberg_viterbi(Tensor log_probs, Tensor targets, int blank=0, int soft_mem_limit=1000) -> Tensor");
-    m.def("pruned_viterbi(Tensor log_probs, Tensor targets, int blank=0, float var_rat=3.7, float confidence=0.99, float accuracy=0.97, float precision=-1.0, float recall=-1.0, float padding=5.0) -> Tensor");
-    m.def("pruned_hirschberg_viterbi(Tensor log_probs, Tensor targets, int blank=0, float var_rat=3.7, float confidence=0.99, float accuracy=0.97, float precision=-1.0, float recall=-1.0, float padding=5.0, int soft_mem_limit=1000) -> Tensor");
+    m.def("pruned_viterbi(Tensor log_probs, Tensor targets, int blank=0, float var_rat=3.7, float confidence=0.99, float accuracy=0.97, float precision=-1.0, float recall=-1.0, float padding=375.0) -> Tensor");
+    m.def("pruned_hirschberg_viterbi(Tensor log_probs, Tensor targets, int blank=0, float var_rat=3.7, float confidence=0.99, float accuracy=0.97, float precision=-1.0, float recall=-1.0, float padding=375.0, int soft_mem_limit=1000) -> Tensor");
     }
 
     // Registers CPU implementations for mymuladd, mymul, myadd_out
