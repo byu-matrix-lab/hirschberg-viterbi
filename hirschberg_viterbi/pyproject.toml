@@ -7,15 +7,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hirschberg-viterbi"
-version = "1.0.0"
+version = "0.1.0"
 description = "Memory-efficient forced alignment for long sequences."
 readme = "README.md"
-requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Lawry Sorenson", email = "lawrysorenson@byu.edu"}
 ]
 dependencies = [
     "torch>=2.10.0",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: POSIX :: Linux"
 ]
 
 [dependency-groups]
@@ -26,3 +31,4 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/byu-matrix-lab/hirschberg-viterbi"
+Issues = "https://github.com/byu-matrix-lab/hirschberg-viterbi/issues"
