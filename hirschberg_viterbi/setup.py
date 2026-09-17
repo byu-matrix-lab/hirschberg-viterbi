@@ -87,13 +87,13 @@ def get_extensions():
 
 setup(
     name=library_name,
-    version="1.0.0",
+    version="0.1.0",
     packages=find_packages(),
     ext_modules=get_extensions(),
     install_requires=["torch>=2.10.0"],
     description="Optimized Forced Alignment for long sequences with O(n) memory usage",
     long_description=open(
-        os.path.join(os.path.dirname(os.path.relpath(__file__)), "..", "README.md")
+        os.path.join(os.path.dirname(os.path.relpath(__file__)), "README.md")
     ).read(),
     long_description_content_type="text/markdown",
     url="https://github.com/byu-matrix-lab/hirschberg-viterbi",
