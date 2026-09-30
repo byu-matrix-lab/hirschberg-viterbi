@@ -94,6 +94,7 @@ namespace hirschberg_viterbi {
         double accuracy,
         double precision,
         double recall,
+        double silence,
         double padding);
 }
 

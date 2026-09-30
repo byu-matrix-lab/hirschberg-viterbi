@@ -46,11 +46,10 @@ Each optimization adds some number of extra parameters.
 
     - `accuracy` - This is the main parameter you should change when using this method. It needs to be a *lower bound* for the accuracy of the transcription. The pruning space is increased based on the worst-case possibilities for eronuous transcript. This defaults to 0.97.
     - `precision`, `recall` - These let you break the transcription accuracy into precision and recall, which indicate how much of the transcript does not have audio, and how much of the audio does not have a transcript. These should also be lower bounds. These default to -1 to indicate that the shared accuracy parameter is being used instead.
+    - `silence` - This parameter is an upper-bound for the proportion of silence in the audio. Defaults to 0.03. For now, the silence parameter is just substracted from `recall` to indicate that part of the audio does not have a corresponding transcription.
     - `confidence` - The confidence level for the confidence window used to produce pruning bounds. Defaults to 0.99.
     - `var_rat` - This parameter should be an upper bound on the ratio between the variance and mean of the durations of graphemes, and is used in scaling the expected duration of the text to match the audio length. Defaults to 3.7 based on our analysis. Probably don't change this unless you are doing research.
     - `padding` - This parameter sets a lower bound for the timesteps in each half of the window around the diagonal. This is needed for the edges of the audio, where the pruning model breaks down because the sequence is not long enough for normality to form. This defaults to 375 (7.5 seconds on each side * 50 timesteps per second), to create a minimum of a 15 second window centered on the diagonal. I called it padding because the pruning window is padded on the ends up to this size, but it could probably have a better name.
-
-We will be adding a silence parameter soon to indicate an upper bound for the amount of silence in the audio. For now, you can subtract silence from the recall parameter, as they both indicate part of the audio that does not have a transcription.
 
 For now, you must move the inputs to the CPU for computation. I have a loose design for a CUDA kernel planned with much higher concurrency, that I will implement it if there is sufficient demand / use cases beyond the CPU implementation provided.
 

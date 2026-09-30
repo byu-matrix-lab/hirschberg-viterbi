@@ -29,7 +29,9 @@ namespace hirschberg_viterbi {
         double confidence,
         double accuracy,
         double precision,
-        double recall
+        double recall,
+        double silence,
+        double padding
     );
 
     torch::stable::Tensor pruned_viterbi_cpu(
@@ -41,6 +43,7 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
+        const double silence = 0.03,
         const double padding = 5.0
     );
 
@@ -53,6 +56,7 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
+        const double silence = 0.03,
         const double padding = 5.0,
         const int64_t soft_mem_limit=1000LL
     );
