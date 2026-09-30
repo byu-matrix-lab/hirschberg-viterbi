@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools",
+    "setuptools>=77.0.3",
     "torch>=2.10.0",
 ]
 build-backend = "setuptools.build_meta"
@@ -12,6 +12,7 @@ description = "Memory-efficient forced alignment for long sequences."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+requires-python = ">=3.10"
 authors = [
     {name = "Lawry Sorenson", email = "lawrysorenson@byu.edu"}
 ]
@@ -24,6 +25,7 @@ classifiers = [
 ]
 
 [tool.setuptools.packages.find]
+include = ["hirschberg_viterbi*"]
 exclude = ["tests*"]
 
 [dependency-groups]

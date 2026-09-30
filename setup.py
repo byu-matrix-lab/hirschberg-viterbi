@@ -1,4 +1,4 @@
-# Taken from:
+# Adapted from:
 # https://github.com/pytorch/extension-cpp/blob/master/extension_cpp_stable/setup.py
 
 # Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -21,19 +21,15 @@ from torch.utils.cpp_extension import (
 
 library_name = "hirschberg_viterbi"
 
-if torch.__version__ >= "2.6.0":
-    py_limited_api = True
-else:
-    py_limited_api = False
-
-
 def get_extensions():
     debug_mode = os.getenv("DEBUG", "0") == "1"
-    use_cuda = os.getenv("USE_CUDA", "1") == "1"
+    use_cuda = os.getenv("USE_CUDA", "0") == "1" # Default is no cuda for now
     if debug_mode:
         print("Compiling in debug mode")
 
-    use_cuda = use_cuda and torch.cuda.is_available() and CUDA_HOME is not None
+    if use_cuda and CUDA_HOME is None:
+        raise RuntimeError("USE_CUDA=1, but no CUDA toolkit was found")
+
     extension = CUDAExtension if use_cuda else CppExtension
 
     extra_link_args = []
@@ -64,10 +60,10 @@ def get_extensions():
 
     this_dir = os.path.dirname(os.path.relpath(__file__))
     extensions_dir = os.path.join(this_dir, library_name, "csrc")
-    sources = list(glob.glob(os.path.join(extensions_dir, "*.cpp")))
+    sources = sorted(glob.glob(os.path.join(extensions_dir, "*.cpp")))
 
     extensions_cuda_dir = os.path.join(extensions_dir, "cuda")
-    cuda_sources = list(glob.glob(os.path.join(extensions_cuda_dir, "*.cu")))
+    cuda_sources = sorted(glob.glob(os.path.join(extensions_cuda_dir, "*.cu")))
 
     if use_cuda:
         sources += cuda_sources
@@ -78,7 +74,7 @@ def get_extensions():
             sources,
             extra_compile_args=extra_compile_args,
             extra_link_args=extra_link_args,
-            py_limited_api=py_limited_api,
+            py_limited_api=True,
         )
     ]
 
@@ -86,16 +82,7 @@ def get_extensions():
 
 
 setup(
-    name=library_name,
-    version="0.1.0",
     ext_modules=get_extensions(),
-    install_requires=["torch>=2.10.0"],
-    description="Optimized Forced Alignment for long sequences with O(n) memory usage",
-    long_description=open(
-        os.path.join(os.path.dirname(os.path.relpath(__file__)), "README.md")
-    ).read(),
-    long_description_content_type="text/markdown",
-    url="https://github.com/byu-matrix-lab/hirschberg-viterbi",
     cmdclass={"build_ext": BuildExtension},
-    options={"bdist_wheel": {"py_limited_api": "cp39"}} if py_limited_api else {},
+    options={"bdist_wheel": {"py_limited_api": "cp39"}},
 )
