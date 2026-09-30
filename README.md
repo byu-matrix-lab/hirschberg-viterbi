@@ -62,5 +62,10 @@ Each method also has a `raw_*` equivalent, such as `raw_hirschberg_viterbi`. The
 ## Citation
 
 ```bibtex
-citation here
+@article{sorenson2026scaling,
+  title={Scaling Forced Alignment to End-User Devices},
+  author={Sorenson, Lawry and Crandall, Michael and Ringger, Eric K and Richardson, Stephen D},
+  journal={arXiv preprint arXiv:2609.21145},
+  year={2026}
+}
 ```
