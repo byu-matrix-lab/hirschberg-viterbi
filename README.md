@@ -24,8 +24,6 @@ cd hirschberg_viterbi
 pip install -e .
 ```
 
-Use `USE_CUDA=0` to create a cpu-only build on CUDA systems.
-
 ## Usage
 
 There are 4 alignment methods in this package: viterbi, hirschberg_viterbi, pruned_viterbi, and pruned_hirschberg_viterbi, depending which optimizations you want to use. We recommend always using the Hirschberg optimization, as it was always beneficial in our experiments.
