@@ -10,6 +10,7 @@
 #include <torch/headeronly/macros/Macros.h>
 
 #include "helpers.h"
+#include "pruned_hirschberg_viterbi.h"
 
 using torch::stable::Tensor;
 using torch::headeronly::ScalarType;
@@ -145,9 +146,8 @@ namespace hirschberg_viterbi {
             int pstart = time>logits_left ? lower_bounds[time-1] : text_left;
             int pwidth = time>logits_left ? widths[time-1] : 1;
 
-            // THIS IS WRONG HERE
             int shift = lower_bounds[time] - pstart;
-            assert (shift >= 0); // check monotonic, TODO: remove
+            assert (shift >= 0); // check monotonic
 
             // ci + shift >= 0
             // int cstart = max(0, -shift);
@@ -411,14 +411,14 @@ namespace hirschberg_viterbi {
     Tensor pruned_viterbi_cpu(
         const Tensor& log_probs,
         const Tensor& targets,
-        const int32_t blank = 0,
-        const double var_rat = 3.7,
-        const double confidence = 0.99,
-        const double accuracy = 0.97,
-        const double precision = -1.0,
-        const double recall = -1.0,
-        const double silence = 0.03,
-        const double padding = 375.0) {
+        const int32_t blank,
+        const double var_rat,
+        const double confidence,
+        const double accuracy,
+        const double precision,
+        const double recall,
+        const double silence,
+        const double padding) {
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 
@@ -483,15 +483,15 @@ namespace hirschberg_viterbi {
     Tensor pruned_hirschberg_viterbi_cpu(
         const Tensor& log_probs,
         const Tensor& targets,
-        const int32_t blank = 0,
-        const double var_rat = 3.7,
-        const double confidence = 0.99,
-        const double accuracy = 0.97,
-        const double precision = -1.0,
-        const double recall = -1.0,
-        const double silence = 0.03,
-        const double padding = 375.0,
-        const int64_t soft_mem_limit=1000LL) {
+        const int32_t blank,
+        const double var_rat,
+        const double confidence,
+        const double accuracy,
+        const double precision,
+        const double recall,
+        const double silence,
+        const double padding,
+        const int64_t soft_mem_limit) {
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 

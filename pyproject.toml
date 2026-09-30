@@ -2,6 +2,7 @@
 requires = [
     "setuptools>=77.0.3",
     "torch>=2.10.0",
+    "ninja"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -23,6 +24,9 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Operating System :: POSIX :: Linux"
 ]
+
+[tool.setuptools]
+include-package-data = false
 
 [tool.setuptools.packages.find]
 include = ["hirschberg_viterbi*"]

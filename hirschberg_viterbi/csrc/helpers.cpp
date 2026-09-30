@@ -149,7 +149,7 @@ namespace hirschberg_viterbi {
         STD_TORCH_CHECK(0.0 <= silence && silence <= 1.0, "Silence must be in [0, 1]");
         STD_TORCH_CHECK(precision == -1 || (0.1 <= precision && precision <= 1.0), "Precision must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if precision < 10%.");
         STD_TORCH_CHECK(recall == -1 || (0.1 <= recall-silence && recall-silence <= 1.0), "Recall-silence must be in [0.1, 1] (or -1 to use shared accuracy instead). Use the unpruned implementation if recall < 10%.");
-        STD_TORCH_CHECK(recall == -1 && (0.1 <= accuracy-silence && accuracy-silence <= 1.0), "Accuracy-silence must be in [0.1, 1] when using accuracy for recall. Use the unpruned implementation when below 10%.");
+        STD_TORCH_CHECK(recall != -1 || (0.1 <= accuracy-silence && accuracy-silence <= 1.0), "Accuracy-silence must be in [0.1, 1] when using accuracy for recall. Use the unpruned implementation when below 10%.");
         STD_TORCH_CHECK(0.0 <= padding, "Padding must be non-negative.");
     }
 }

@@ -18,7 +18,8 @@ namespace hirschberg_viterbi {
         double var_rat,
         double stds,
         int num_dels,
-        int num_inser
+        int num_inser,
+        double padding
     );
 
     template<typename scalar_t>
@@ -44,7 +45,7 @@ namespace hirschberg_viterbi {
         const double precision = -1.0,
         const double recall = -1.0,
         const double silence = 0.03,
-        const double padding = 5.0
+        const double padding = 375.0
     );
 
     torch::stable::Tensor pruned_hirschberg_viterbi_cpu(
@@ -57,7 +58,7 @@ namespace hirschberg_viterbi {
         const double precision = -1.0,
         const double recall = -1.0,
         const double silence = 0.03,
-        const double padding = 5.0,
+        const double padding = 375.0,
         const int64_t soft_mem_limit=1000LL
     );
 

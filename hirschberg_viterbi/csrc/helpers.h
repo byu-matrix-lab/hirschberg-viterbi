@@ -40,6 +40,10 @@ namespace hirschberg_viterbi {
         ~bt_two_bits() {
             delete[] data;
         }
+
+        // delete copies for safety
+        bt_two_bits(const bt_two_bits&) = delete;
+        bt_two_bits& operator=(const bt_two_bits&) = delete;
     };
 
     struct bt_full_byte {
@@ -68,6 +72,10 @@ namespace hirschberg_viterbi {
         ~bt_full_byte() {
             delete[] data;
         }
+
+        // delete copies for safety
+        bt_full_byte(const bt_full_byte&) = delete;
+        bt_full_byte& operator=(const bt_full_byte&) = delete;
     };
 
     template<typename target_t>
