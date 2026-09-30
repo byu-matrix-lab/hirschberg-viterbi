@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 
-# determines what gets imported by wild cart from this file
+# determines what gets imported by wildcard from this file
 __all__ = [
     "raw_viterbi",
     "raw_hirschberg_viterbi",
@@ -21,11 +21,11 @@ def raw_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0) -> Tensor:
 def raw_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, soft_mem_limit: int = 1000) -> Tensor:
     return torch.ops.hirschberg_viterbi.hirschberg_viterbi.default(log_probs, targets, blank, soft_mem_limit)
 
-def raw_pruned_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, padding: float = 5.0) -> Tensor:
-    return torch.ops.hirschberg_viterbi.pruned_viterbi.default(log_probs, targets, blank, var_rat, confidence, accuracy, precision, recall, padding)
+def raw_pruned_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, silence=0.03, padding: float = 5.0) -> Tensor:
+    return torch.ops.hirschberg_viterbi.pruned_viterbi.default(log_probs, targets, blank, var_rat, confidence, accuracy, precision, recall, silence, padding)
 
-def raw_pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, padding: float = 5.0, soft_mem_limit: int = 1000) -> Tensor:
-    return torch.ops.hirschberg_viterbi.pruned_hirschberg_viterbi.default(log_probs, targets, blank, var_rat, confidence, accuracy, precision, recall, padding, soft_mem_limit)
+def raw_pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, silence=0.03, padding: float = 5.0, soft_mem_limit: int = 1000) -> Tensor:
+    return torch.ops.hirschberg_viterbi.pruned_hirschberg_viterbi.default(log_probs, targets, blank, var_rat, confidence, accuracy, precision, recall, silence, padding, soft_mem_limit)
 
 # TODO: maybe use typeddict to support auto complete
 def torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, method, **kwargs):

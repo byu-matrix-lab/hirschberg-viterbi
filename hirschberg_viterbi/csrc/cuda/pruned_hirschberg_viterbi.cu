@@ -25,6 +25,7 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
+        const double silence = 0.03,
         const double padding = 5.0) {
         STD_TORCH_CHECK(false, "CUDA alignment has not been implemented yet. Please move tensors to cpu.");
 
@@ -40,6 +41,7 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
+        const double silence = 0.03,
         const double padding = 5.0,
         const int64_t soft_mem_limit=1000LL) {
         STD_TORCH_CHECK(false, "CUDA alignment has not been implemented yet. Please move tensors to cpu.");

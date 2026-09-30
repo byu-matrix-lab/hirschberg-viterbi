@@ -67,9 +67,11 @@ namespace hirschberg_viterbi {
         double accuracy,
         double precision,
         double recall,
+        double silence,
         double padding) {
         if (precision == -1) precision = accuracy;
         if (recall == -1) recall = accuracy;
+        recall -= silence;
 
         // Compute the inverse normal cdf for confidence adjustment
         // double p = 1 - (1 - confidence) / 2 / n;
@@ -415,9 +417,10 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
+        const double silence = 0.03,
         const double padding = 375.0) {
 
-        pruning_check(var_rat, confidence, accuracy, precision, recall, padding);
+        pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 
         auto [text, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
@@ -432,6 +435,7 @@ namespace hirschberg_viterbi {
             accuracy,
             precision,
             recall,
+            silence,
             padding
         );
 
@@ -485,10 +489,11 @@ namespace hirschberg_viterbi {
         const double accuracy = 0.97,
         const double precision = -1.0,
         const double recall = -1.0,
+        const double silence = 0.03,
         const double padding = 375.0,
         const int64_t soft_mem_limit=1000LL) {
 
-        pruning_check(var_rat, confidence, accuracy, precision, recall, padding);
+        pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 
         auto [text, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
@@ -503,6 +508,7 @@ namespace hirschberg_viterbi {
             accuracy,
             precision,
             recall,
+            silence,
             padding
         );
 
