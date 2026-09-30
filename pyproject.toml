@@ -23,6 +23,9 @@ classifiers = [
     "Operating System :: POSIX :: Linux"
 ]
 
+[tool.setuptools.packages.find]
+exclude = ["tests*"]
+
 [dependency-groups]
 dev = [
     "numpy>=2.2.6",
