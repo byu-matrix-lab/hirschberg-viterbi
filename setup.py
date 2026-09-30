@@ -10,7 +10,7 @@ import os
 import torch
 import glob
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
 from torch.utils.cpp_extension import (
     CppExtension,
@@ -88,7 +88,6 @@ def get_extensions():
 setup(
     name=library_name,
     version="0.1.0",
-    packages=find_packages(),
     ext_modules=get_extensions(),
     install_requires=["torch>=2.10.0"],
     description="Optimized Forced Alignment for long sequences with O(n) memory usage",
