@@ -10,6 +10,7 @@
 #include <torch/headeronly/macros/Macros.h>
 
 #include "helpers.h"
+#include "hirschberg_viterbi.h"
 
 using torch::stable::Tensor;
 using torch::headeronly::ScalarType;

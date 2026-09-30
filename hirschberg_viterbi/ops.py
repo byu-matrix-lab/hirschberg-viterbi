@@ -21,10 +21,10 @@ def raw_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0) -> Tensor:
 def raw_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, soft_mem_limit: int = 1000) -> Tensor:
     return torch.ops.hirschberg_viterbi.hirschberg_viterbi.default(log_probs, targets, blank, soft_mem_limit)
 
-def raw_pruned_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, silence=0.03, padding: float = 5.0) -> Tensor:
+def raw_pruned_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, silence=0.03, padding: float = 375.0) -> Tensor:
     return torch.ops.hirschberg_viterbi.pruned_viterbi.default(log_probs, targets, blank, var_rat, confidence, accuracy, precision, recall, silence, padding)
 
-def raw_pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, silence=0.03, padding: float = 5.0, soft_mem_limit: int = 1000) -> Tensor:
+def raw_pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, blank: int = 0, var_rat: float = 3.7, confidence: float = 0.99, accuracy: float = 0.97, precision: float = -1.0, recall: float = -1.0, silence=0.03, padding: float = 375.0, soft_mem_limit: int = 1000) -> Tensor:
     return torch.ops.hirschberg_viterbi.pruned_hirschberg_viterbi.default(log_probs, targets, blank, var_rat, confidence, accuracy, precision, recall, silence, padding, soft_mem_limit)
 
 # TODO: maybe use typeddict to support auto complete
@@ -43,7 +43,7 @@ def torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, meth
         torch._check(target_lengths.dim() == 1, lambda: "Target lengths should have shape [batch size]")
         sliced_targets = sliced_targets[:target_lengths[0]]
 
-    alignment = method.default(sliced_log_probs, sliced_targets, **kwargs)
+    alignment = method.default(sliced_log_probs, sliced_targets, blank, **kwargs)
 
     # -1 handles final blank > len sliced_targets
     labels = torch.where((alignment%2)==0, blank, sliced_targets[(alignment-1)//2])
@@ -51,23 +51,23 @@ def torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, meth
 
     return labels.unsqueeze(0), confs.unsqueeze(0)
 
-def viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+def viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> tuple[Tensor, Tensor]:
     return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.viterbi, **kwargs)
 
-def hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+def hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> tuple[Tensor, Tensor]:
     return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.hirschberg_viterbi, **kwargs)
 
-def pruned_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+def pruned_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> tuple[Tensor, Tensor]:
     return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.pruned_viterbi, **kwargs)
 
-def pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> Tensor:
+def pruned_hirschberg_viterbi(log_probs: Tensor, targets: Tensor, input_lengths: Tensor | None = None, target_lengths: Tensor | None = None, blank: int = 0, **kwargs) -> tuple[Tensor, Tensor]:
     return torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, torch.ops.hirschberg_viterbi.pruned_hirschberg_viterbi, **kwargs)
 
 # Registers a FakeTensor kernel (aka "meta kernel", "abstract impl")
 # that describes what the properties of the output Tensor are given
 # the properties of the input Tensor. The FakeTensor kernel is necessary
 # for the op to work performantly with torch.compile.
-def fake_checker(log_probs, targets, **kwargs):
+def fake_checker(log_probs, targets, *args, **kwargs):
     torch._check(log_probs.dim() == 2)
     torch._check(targets.dim() == 1)
     torch._check(log_probs.dtype == torch.float or log_probs.dtype == torch.double)

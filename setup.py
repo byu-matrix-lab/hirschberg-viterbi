@@ -1,11 +1,6 @@
 # Adapted from:
 # https://github.com/pytorch/extension-cpp/blob/master/extension_cpp_stable/setup.py
 
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 import os
 import torch
 import glob
@@ -35,6 +30,7 @@ def get_extensions():
     extra_link_args = []
     extra_compile_args = {
         "cxx": [
+            "-std=c++20", # only used by dispatch templates, so could be dropped with little work if needed
             "-O3" if not debug_mode else "-O0",
             "-fdiagnostics-color=always",
             "-DPy_LIMITED_API=0x03090000",
@@ -53,10 +49,15 @@ def get_extensions():
             "-DUSE_CUDA",
         ],
     }
+
     if debug_mode:
         extra_compile_args["cxx"].append("-g")
         extra_compile_args["nvcc"].append("-g")
         extra_link_args.extend(["-O0", "-g"])
+    else:
+        extra_link_args.append("-flto")
+        extra_compile_args["cxx"].append("-flto")
+        extra_compile_args["nvcc"].extend(["-Xcompiler=-flto"])
 
     this_dir = os.path.dirname(os.path.relpath(__file__))
     extensions_dir = os.path.join(this_dir, library_name, "csrc")
