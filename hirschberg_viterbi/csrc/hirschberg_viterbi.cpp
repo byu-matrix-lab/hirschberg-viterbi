@@ -36,11 +36,14 @@ namespace hirschberg_viterbi {
 
         int max_width = text_right - text_left;
 
-        auto cur_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
-        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
-        
-        scalar_t* cur_probs = cur_probs_holder.get();
-        scalar_t* prev_probs = prev_probs_holder.get();
+        scalar_t* cur_probs = new scalar_t[2+max_width];
+        scalar_t* prev_probs;
+        try {
+            prev_probs = new scalar_t[2+max_width];
+        } catch (const std::bad_alloc& e) {
+            delete[] cur_probs;
+            throw;
+        }
 
         for (int i=0;i<max_width+2;++i) cur_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -83,8 +86,11 @@ namespace hirschberg_viterbi {
         assert (text_right > 0);
         if (text[text_right-1]!=text[text_right-3] && cur_probs[max_width-3] > cur_val) cur_val=cur_probs[max_width-3],cur=text_right-3;
 
-        cur_probs_holder.reset();
-        prev_probs_holder.reset();
+        cur_probs-=2;
+        prev_probs-=2;
+
+        delete[] cur_probs;
+        delete[] prev_probs;
 
         for (int time=logits_right; --time >= logits_left; ) {
             ans[time] = cur;
@@ -123,11 +129,15 @@ namespace hirschberg_viterbi {
 
         int max_width = text_right - text_left;
 
-        auto cur_left_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
-        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
+        scalar_t* cur_left_probs = new scalar_t[2+max_width];
 
-        scalar_t* cur_left_probs = cur_left_probs_holder.get();
-        scalar_t* prev_probs = prev_probs_holder.get();
+        scalar_t* prev_probs;
+        try {
+            prev_probs = new scalar_t[2+max_width];
+        } catch (const std::bad_alloc& e) {
+            delete[] cur_left_probs;
+            throw;
+        }
 
         for (int i=0;i<max_width+2;++i) cur_left_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -163,8 +173,16 @@ namespace hirschberg_viterbi {
             }
         }
 
-        auto cur_right_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
-        scalar_t* cur_right_probs = cur_right_probs_holder.get();
+        scalar_t* cur_right_probs;
+        try {
+            cur_right_probs = new scalar_t[2+max_width];
+        } catch (const std::bad_alloc& e) {
+            cur_left_probs-=2;
+            delete[] cur_left_probs;
+            delete[] prev_probs;
+            throw;
+        }
+
         for (int i=0;i<max_width+2;++i) cur_right_probs[i] = mask_val;
         cur_right_probs[max_width-1] = 0;
         prev_probs-=2;
@@ -180,7 +198,7 @@ namespace hirschberg_viterbi {
                 val = prev_probs[ci];
 
                 if (prev_probs[ci+1] > val) val=prev_probs[ci+1];
-                // text padding allows us to look back past the start of text
+                // text padding allows us to look back past the end of text
                 if (text[ci] != text[ci+2] && prev_probs[ci+2] > val) val=prev_probs[ci+2];
 
                 val += logits_view[text[ci]];
@@ -203,10 +221,11 @@ namespace hirschberg_viterbi {
         pivot += text_left;
 
         ans[split] = pivot;
-
-        cur_left_probs_holder.reset();
-        cur_right_probs_holder.reset();
-        prev_probs_holder.reset();
+        
+        cur_left_probs-=2;
+        delete[] cur_left_probs;
+        delete[] cur_right_probs;
+        delete[] prev_probs;
 
         text -= text_left;
 
