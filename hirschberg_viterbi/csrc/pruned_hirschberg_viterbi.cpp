@@ -128,11 +128,15 @@ namespace hirschberg_viterbi {
         int64_t logits_stride = logits.stride(0);
 
 
-        auto cur_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
-        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
-
-        scalar_t* cur_probs = cur_probs_holder.get();
-        scalar_t* prev_probs = prev_probs_holder.get();
+        scalar_t* cur_probs = new scalar_t[4+max_width];
+        scalar_t* prev_probs;
+        
+        try{
+            prev_probs = new scalar_t[4+max_width];
+        } catch (const std::bad_alloc& e) {
+            delete[] cur_probs;
+            throw;
+        }
 
         for (int i=0;i<5;++i) cur_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -196,8 +200,10 @@ namespace hirschberg_viterbi {
 
         assert (cur_val != mask_val);
 
-        cur_probs_holder.reset();
-        prev_probs_holder.reset();
+        cur_probs-=2;
+        prev_probs-=2;
+        delete[] cur_probs;
+        delete[] prev_probs;
 
         for (int time=logits_right; --time >= logits_left; ) {
             ans[time] = cur;
@@ -260,11 +266,14 @@ namespace hirschberg_viterbi {
         // 64-bit to avoid potential overflow for audio past 17.4 hours
         int64_t logits_stride = logits.stride(0);
         
-        auto cur_left_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
-        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
-
-        scalar_t* cur_left_probs = cur_left_probs_holder.get();
-        scalar_t* prev_probs = prev_probs_holder.get();
+        scalar_t* cur_left_probs = new scalar_t[4+max_width];
+        scalar_t* prev_probs;
+        try {
+            prev_probs = new scalar_t[4+max_width];
+        } catch (const std::bad_alloc& e) {
+            delete[] cur_left_probs;
+            throw;
+        }
 
         for (int i=0;i<5;++i) cur_left_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -316,8 +325,17 @@ namespace hirschberg_viterbi {
             }
         }
 
-        auto cur_right_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
-        scalar_t* cur_right_probs = cur_right_probs_holder.get();
+        scalar_t* cur_right_probs;
+        try {
+            cur_right_probs = new scalar_t[4+max_width];
+        } catch (const std::bad_alloc& e) {
+            cur_left_probs-=2;
+            prev_probs-=2;
+            delete[] cur_left_probs;
+            delete[] prev_probs;
+            throw;
+        }
+
         for (int i=0;i<5;++i) cur_right_probs[i] = mask_val;
         cur_right_probs[2] = 0;
 
@@ -375,9 +393,12 @@ namespace hirschberg_viterbi {
 
         ans[split] = pivot;
 
-        cur_right_probs_holder.reset();
-        cur_left_probs_holder.reset();
-        prev_probs_holder.reset();
+        cur_right_probs-=2;
+        cur_left_probs-=2;
+        prev_probs-=2;
+        delete[] cur_left_probs;
+        delete[] cur_right_probs;
+        delete[] prev_probs;
 
         // recurse left
         _pruned_hirschberg_helper<backtrack_t, scalar_t, target_t>(
