@@ -14,13 +14,14 @@ using torch::headeronly::DeviceType;
 
 namespace hirschberg_viterbi {
     template<typename target_t>
-    std::pair<target_t*, int> add_blanks(
+    std::pair<std::unique_ptr<target_t[]>, int> add_blanks(
         const Tensor& targets,
         const target_t blank) {
         int n = targets.size(0);
-        target_t* ans = new target_t[2*n+5];
 
-        ans += 2;
+        std::unique_ptr<target_t[]> ans_holder = std::make_unique_for_overwrite<target_t[]>(2*n+5);
+        target_t* ans = ans_holder.get()+2;
+        
         auto* const targ_view = targets.const_data_ptr<target_t>();
         for (int i=0;i<n;++i) {
             ans[2*i] = blank;
@@ -32,15 +33,15 @@ namespace hirschberg_viterbi {
         ans[-2]=ans[-1]=blank;
         ans[2*n+1] = ans[2*n+2] = blank;
 
-        return {ans, 2*n+1};
+        return {std::move(ans_holder), 2*n+1};
     }
 
-    template std::pair<int32_t*, int> add_blanks<int32_t>(
+    template std::pair<std::unique_ptr<int32_t[]>, int> add_blanks<int32_t>(
         const Tensor& targets,
         const int32_t blank);
 
     template<DeviceType device, typename target_t>
-    std::tuple<target_t*, int, Tensor, Tensor> common_setup(
+    std::tuple<std::unique_ptr<target_t[]>, int, Tensor, Tensor> common_setup(
         const Tensor& log_probs,
         const Tensor& targets,
         const target_t blank) {
@@ -106,10 +107,8 @@ namespace hirschberg_viterbi {
 
         const int64_t T = log_probs.size(0);
 
-        // this allocates memory
+        // first memory allocation here
         auto [text, text_len] = add_blanks<int32_t>(cont_targets, blank);
-        // Either no more input assertions, or use smart pointers instead
-        // otherwise text will leak
 
         auto ans = torch::stable::empty(
             {T},
@@ -120,16 +119,15 @@ namespace hirschberg_viterbi {
         );
 
         auto cont_log_probs = torch::stable::contiguous(log_probs);
-        return {text, text_len, cont_log_probs, ans};
+        return {std::move(text), text_len, cont_log_probs, ans};
     }
 
-    template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
+    template std::tuple<std::unique_ptr<int32_t[]>, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
         const Tensor& log_probs,
         const Tensor& targets,
         const int32_t blank);
 
-
-    // template std::tuple<int32_t*, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
+    // template std::tuple<std::unique_ptr<int32_t[]>, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
     //     const Tensor& log_probs,
     //     const Tensor& targets,
     //     const int32_t blank);

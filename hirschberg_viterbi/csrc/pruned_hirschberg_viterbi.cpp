@@ -60,7 +60,7 @@ namespace hirschberg_viterbi {
     }
 
     template<typename scalar_t>
-    std::pair<scalar_t*, scalar_t*> calculate_bounds(
+    std::pair<std::unique_ptr<scalar_t[]>, std::unique_ptr<scalar_t[]>> calculate_bounds(
         int duration,
         int n,
         double var_rat,
@@ -79,8 +79,8 @@ namespace hirschberg_viterbi {
         // double stds = erfinv(2*p-1) * sqrt(2);
         double stds = sqrt(2) * xsf::cephes::erfcinv((1 - confidence) / n);
 
-        scalar_t* lower_bounds = new scalar_t[duration];
-        scalar_t* upper_bounds = new scalar_t[duration];
+        auto lower_bounds = std::make_unique_for_overwrite<scalar_t[]>(duration);
+        auto upper_bounds = std::make_unique_for_overwrite<scalar_t[]>(duration);
 
         for (int i=0;i<duration;++i) {
             lower_bounds[i] = 2*n+1;
@@ -104,7 +104,7 @@ namespace hirschberg_viterbi {
 
         for (int i=0;i<duration; ++i) assert(lower_bounds[i] < upper_bounds[i]);
 
-        return {lower_bounds, upper_bounds};
+        return {std::move(lower_bounds), std::move(upper_bounds)};
     }
 
     template<typename backtrack_t, typename scalar_t, typename target_t>
@@ -127,8 +127,12 @@ namespace hirschberg_viterbi {
         // 64-bit to avoid potential overflow for audio past 17.4 hours
         int64_t logits_stride = logits.stride(0);
 
-        scalar_t* cur_probs = new scalar_t[4+max_width];
-        scalar_t* prev_probs = new scalar_t[4+max_width];
+
+        auto cur_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
+        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
+
+        scalar_t* cur_probs = cur_probs_holder.get();
+        scalar_t* prev_probs = prev_probs_holder.get();
 
         for (int i=0;i<5;++i) cur_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -192,11 +196,8 @@ namespace hirschberg_viterbi {
 
         assert (cur_val != mask_val);
 
-        cur_probs-=2;
-        prev_probs-=2;
-
-        delete[] cur_probs;
-        delete[] prev_probs;
+        cur_probs_holder.reset();
+        prev_probs_holder.reset();
 
         for (int time=logits_right; --time >= logits_left; ) {
             ans[time] = cur;
@@ -258,9 +259,12 @@ namespace hirschberg_viterbi {
         auto* const logits_ptr = logits.const_data_ptr<scalar_t>();
         // 64-bit to avoid potential overflow for audio past 17.4 hours
         int64_t logits_stride = logits.stride(0);
+        
+        auto cur_left_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
+        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
 
-        scalar_t* cur_left_probs = new scalar_t[4+max_width];
-        scalar_t* prev_probs = new scalar_t[4+max_width];
+        scalar_t* cur_left_probs = cur_left_probs_holder.get();
+        scalar_t* prev_probs = prev_probs_holder.get();
 
         for (int i=0;i<5;++i) cur_left_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -312,7 +316,8 @@ namespace hirschberg_viterbi {
             }
         }
 
-        scalar_t* cur_right_probs = new scalar_t[4+max_width];
+        auto cur_right_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(4+max_width);
+        scalar_t* cur_right_probs = cur_right_probs_holder.get();
         for (int i=0;i<5;++i) cur_right_probs[i] = mask_val;
         cur_right_probs[2] = 0;
 
@@ -370,12 +375,9 @@ namespace hirschberg_viterbi {
 
         ans[split] = pivot;
 
-        cur_right_probs-=2;
-        cur_left_probs-=2;
-        prev_probs-=2;
-        delete[] cur_left_probs;
-        delete[] cur_right_probs;
-        delete[] prev_probs;
+        cur_right_probs_holder.reset();
+        cur_left_probs_holder.reset();
+        prev_probs_holder.reset();
 
         // recurse left
         _pruned_hirschberg_helper<backtrack_t, scalar_t, target_t>(
@@ -422,8 +424,10 @@ namespace hirschberg_viterbi {
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 
-        auto [text, text_len, cont_log_probs, ans] =
+        auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
+
+        auto text = text_holder.get()+2;
         
         int32_t T = cont_log_probs.size(0);
 
@@ -439,7 +443,7 @@ namespace hirschberg_viterbi {
             padding
         );
 
-        int32_t* widths = new int32_t[T];
+        auto widths = std::make_unique_for_overwrite<int32_t[]>(T);
         int32_t max_width = 0;
 
         for (int i=0;i<T;++i) {
@@ -458,9 +462,9 @@ namespace hirschberg_viterbi {
                 T,
                 0,
                 text_len,
-                lower_bounds,
-                upper_bounds,
-                widths,
+                lower_bounds.get(),
+                upper_bounds.get(),
+                widths.get(),
                 max_width
             );
         };
@@ -470,12 +474,6 @@ namespace hirschberg_viterbi {
         } else {
             run.template operator()<float>();
         }
-
-        text-=2; // remove the original padding
-        delete[] text;
-        delete[] lower_bounds;
-        delete[] upper_bounds;
-        delete[] widths;
 
         return ans;
     }
@@ -495,8 +493,10 @@ namespace hirschberg_viterbi {
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 
-        auto [text, text_len, cont_log_probs, ans] =
+        auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
+
+        auto text = text_holder.get()+2;
         
         int32_t T = cont_log_probs.size(0);
         
@@ -512,7 +512,7 @@ namespace hirschberg_viterbi {
             padding
         );
 
-        int32_t* widths = new int32_t[T];
+        auto widths = std::make_unique_for_overwrite<int32_t[]>(T);
         int32_t max_width = 0;
 
         for (int i=0;i<T;++i) {
@@ -531,9 +531,9 @@ namespace hirschberg_viterbi {
                 T,
                 0,
                 text_len,
-                lower_bounds,
-                upper_bounds,
-                widths,
+                lower_bounds.get(),
+                upper_bounds.get(),
+                widths.get(),
                 soft_mem_limit
             );
         };
@@ -543,12 +543,6 @@ namespace hirschberg_viterbi {
         } else {
             run.template operator()<float>();
         }
-
-        text-=2; // remove the original padding
-        delete[] text;
-        delete[] lower_bounds;
-        delete[] upper_bounds;
-        delete[] widths;
 
         return ans;
 

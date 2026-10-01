@@ -23,7 +23,7 @@ namespace hirschberg_viterbi {
     );
 
     template<typename scalar_t>
-    std::pair<scalar_t*, scalar_t*> calculate_bounds(
+    std::pair<std::unique_ptr<scalar_t[]>, std::unique_ptr<scalar_t[]>> calculate_bounds(
         int len_logits,
         int len_text,
         double var_rat,
