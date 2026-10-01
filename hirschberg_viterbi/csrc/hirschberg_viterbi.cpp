@@ -35,8 +35,12 @@ namespace hirschberg_viterbi {
         int64_t logits_stride = logits.stride(0);
 
         int max_width = text_right - text_left;
-        scalar_t* cur_probs = new scalar_t[2+max_width];
-        scalar_t* prev_probs = new scalar_t[2+max_width];
+
+        auto cur_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
+        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
+        
+        scalar_t* cur_probs = cur_probs_holder.get();
+        scalar_t* prev_probs = prev_probs_holder.get();
 
         for (int i=0;i<max_width+2;++i) cur_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -79,11 +83,8 @@ namespace hirschberg_viterbi {
         assert (text_right > 0);
         if (text[text_right-1]!=text[text_right-3] && cur_probs[max_width-3] > cur_val) cur_val=cur_probs[max_width-3],cur=text_right-3;
 
-        cur_probs-=2;
-        prev_probs-=2;
-
-        delete[] cur_probs;
-        delete[] prev_probs;
+        cur_probs_holder.reset();
+        prev_probs_holder.reset();
 
         for (int time=logits_right; --time >= logits_left; ) {
             ans[time] = cur;
@@ -121,8 +122,12 @@ namespace hirschberg_viterbi {
         int64_t logits_stride = logits.stride(0);
 
         int max_width = text_right - text_left;
-        scalar_t* cur_left_probs = new scalar_t[2+max_width];
-        scalar_t* prev_probs = new scalar_t[2+max_width];
+
+        auto cur_left_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
+        auto prev_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
+
+        scalar_t* cur_left_probs = cur_left_probs_holder.get();
+        scalar_t* prev_probs = prev_probs_holder.get();
 
         for (int i=0;i<max_width+2;++i) cur_left_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
@@ -158,7 +163,8 @@ namespace hirschberg_viterbi {
             }
         }
 
-        scalar_t* cur_right_probs = new scalar_t[2+max_width];
+        auto cur_right_probs_holder = std::make_unique_for_overwrite<scalar_t[]>(2+max_width);
+        scalar_t* cur_right_probs = cur_right_probs_holder.get();
         for (int i=0;i<max_width+2;++i) cur_right_probs[i] = mask_val;
         cur_right_probs[max_width-1] = 0;
         prev_probs-=2;
@@ -198,10 +204,9 @@ namespace hirschberg_viterbi {
 
         ans[split] = pivot;
 
-        cur_left_probs-=2;
-        delete[] cur_left_probs;
-        delete[] cur_right_probs;
-        delete[] prev_probs;
+        cur_left_probs_holder.reset();
+        cur_right_probs_holder.reset();
+        prev_probs_holder.reset();
 
         text -= text_left;
 
@@ -235,8 +240,10 @@ namespace hirschberg_viterbi {
         const Tensor& targets,
         const int32_t blank) {
 
-        auto [text, text_len, cont_log_probs, ans] =
+        auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
+
+        auto text = text_holder.get() + 2;
         
         // allow double for log_prob data type
         // but I think ints can be used for all reasonable character sets and times
@@ -258,9 +265,6 @@ namespace hirschberg_viterbi {
             run.template operator()<float>();
         }
 
-        text-=2; // remove the original padding
-        delete[] text;
-        
         return ans;
     }
 
@@ -270,8 +274,10 @@ namespace hirschberg_viterbi {
         const int32_t blank,
         const int64_t soft_mem_limit) {
 
-        auto [text, text_len, cont_log_probs, ans] =
+        auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
+
+        auto text = text_holder.get() + 2;
             
         // allow double for log_prob data type
         // but I think ints can be used for all reasonable character sets and times
@@ -294,9 +300,6 @@ namespace hirschberg_viterbi {
             run.template operator()<float>();
         }
 
-        text-=2; // remove the original padding
-        delete[] text;
-        
         return ans;
     }
 

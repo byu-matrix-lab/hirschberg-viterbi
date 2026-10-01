@@ -10,7 +10,7 @@ namespace hirschberg_viterbi {
     // I did not see any gains from using this with hirschberg viterbi
     struct bt_two_bits {
         int max_width;
-        uint8_t* data;
+        std::unique_ptr<uint8_t[]> data;
         static int64_t needed_size(int n, int width) {
             int64_t ans = (width+3)>>2;
             return ans*n;
@@ -18,9 +18,7 @@ namespace hirschberg_viterbi {
 
         bt_two_bits(int n, int width) {
             max_width = (width+3)>>2;
-            int64_t size = (int64_t)max_width * n;
-            data = new uint8_t[size];
-            for (int64_t i=0;i<size;++i) data[i] = 0;
+            data = std::make_unique<uint8_t[]>((int64_t)max_width * n);
         }
 
         uint8_t get(int ti, int ci) {
@@ -36,19 +34,11 @@ namespace hirschberg_viterbi {
             assert(!(reg&(3<<ci)));
             reg|=val<<ci;
         }
-
-        ~bt_two_bits() {
-            delete[] data;
-        }
-
-        // delete copies for safety
-        bt_two_bits(const bt_two_bits&) = delete;
-        bt_two_bits& operator=(const bt_two_bits&) = delete;
     };
 
     struct bt_full_byte {
         int max_width;
-        uint8_t* data;
+        std::unique_ptr<uint8_t[]> data;
         static int64_t needed_size(int n, int width) {
             return (int64_t)width*n;
         }
@@ -56,9 +46,8 @@ namespace hirschberg_viterbi {
         bt_full_byte(int n, int width) {
             max_width = width;
             int64_t size = (int64_t)width * n;
-            data = new uint8_t[size];
+            data = std::make_unique_for_overwrite<uint8_t[]>(size);
             // initialization not needed because compute will fill it in
-            // for (int64_t i=0;i<size;++i) data[i] = 0;
         }
 
         uint8_t get(int ti, int ci) {
@@ -68,23 +57,15 @@ namespace hirschberg_viterbi {
         void set(int ti, int ci, uint8_t val) {
             data[(int64_t)max_width*ti + ci] = val;
         }
-
-        ~bt_full_byte() {
-            delete[] data;
-        }
-
-        // delete copies for safety
-        bt_full_byte(const bt_full_byte&) = delete;
-        bt_full_byte& operator=(const bt_full_byte&) = delete;
     };
 
     template<typename target_t>
-    std::pair<target_t*, int> add_blanks(
+    std::pair<std::unique_ptr<target_t[]>, int> add_blanks(
         const torch::stable::Tensor& targets,
         const target_t blank);
 
     template<torch::headeronly::DeviceType device, typename target_t>
-    std::tuple<target_t*, int, torch::stable::Tensor, torch::stable::Tensor> common_setup(
+    std::tuple<std::unique_ptr<target_t[]>, int, torch::stable::Tensor, torch::stable::Tensor> common_setup(
         const torch::stable::Tensor& log_probs,
         const torch::stable::Tensor& targets,
         const target_t blank = 0);
