@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Lawry Sorenson
+// SPDX-License-Identifier: MIT
+
 #include <cmath>
 #include <torch/csrc/stable/library.h>
 #include <torch/csrc/stable/ops.h>

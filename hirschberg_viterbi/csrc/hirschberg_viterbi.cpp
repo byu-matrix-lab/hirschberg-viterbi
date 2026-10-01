@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Lawry Sorenson
+// SPDX-License-Identifier: MIT
 
 #include <type_traits>
 
