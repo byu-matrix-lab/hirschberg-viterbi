@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Lawry Sorenson
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <Python.h>
