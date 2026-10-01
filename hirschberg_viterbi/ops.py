@@ -35,12 +35,16 @@ def torch_wrapper(log_probs, targets, input_lengths, target_lengths, blank, meth
 
     sliced_log_probs = log_probs[0]
     if input_lengths is not None:
-        torch._check(input_lengths.dim() == 1, lambda: "Input lengths should have shape [batch size]")
+        torch._check(input_lengths.dim() == 1 and input_lengths.size(0)==1, lambda: "Input lengths should have shape [batch size]")
+        torch._check(input_lengths.dtype in (torch.int, torch.long), "Input lengths must have an integer dtype")
+        torch._check(1 <= input_lengths[0].item() <= log_probs.size(1), lambda: "Input lengths should be in range [1, sequence length]")
         sliced_log_probs = sliced_log_probs[:input_lengths[0]]
 
     sliced_targets = targets[0]
     if target_lengths is not None:
-        torch._check(target_lengths.dim() == 1, lambda: "Target lengths should have shape [batch size]")
+        torch._check(target_lengths.dim() == 1 and target_lengths.size(0)==1, lambda: "Target lengths should have shape [batch size]")
+        torch._check(target_lengths.dtype in (torch.int, torch.long), "Target lengths must have an integer dtype")
+        torch._check(1 <= target_lengths[0].item() <= targets.size(1), lambda: "Target lengths should be in range [1, transcription length]")
         sliced_targets = sliced_targets[:target_lengths[0]]
 
     alignment = method.default(sliced_log_probs, sliced_targets, blank, **kwargs)
