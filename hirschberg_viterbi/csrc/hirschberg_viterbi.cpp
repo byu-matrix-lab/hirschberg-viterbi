@@ -36,6 +36,8 @@ namespace hirschberg_viterbi {
 
         int max_width = text_right - text_left;
 
+        backtrack_t backedges(logits_right - logits_left, max_width);
+
         scalar_t* cur_probs = new scalar_t[2+max_width];
         scalar_t* prev_probs;
         try {
@@ -48,8 +50,6 @@ namespace hirschberg_viterbi {
         for (int i=0;i<max_width+2;++i) cur_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
         cur_probs[2] = 0;
-
-        backtrack_t backedges(logits_right - logits_left, max_width);
 
         text += text_left; // for easier math now
 
@@ -173,6 +173,7 @@ namespace hirschberg_viterbi {
             }
         }
 
+        prev_probs-=2;
         scalar_t* cur_right_probs;
         try {
             cur_right_probs = new scalar_t[2+max_width];
@@ -185,7 +186,6 @@ namespace hirschberg_viterbi {
 
         for (int i=0;i<max_width+2;++i) cur_right_probs[i] = mask_val;
         cur_right_probs[max_width-1] = 0;
-        prev_probs-=2;
         prev_probs[max_width] = prev_probs[max_width+1] = mask_val;
 
         logits_view=logits_ptr+logits_right*logits_stride;
@@ -292,6 +292,8 @@ namespace hirschberg_viterbi {
         const Tensor& targets,
         const int32_t blank,
         const int64_t soft_mem_limit) {
+
+        STD_TORCH_CHECK(soft_mem_limit >= 0, "soft_mem_limit must be non-negative.");
 
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);

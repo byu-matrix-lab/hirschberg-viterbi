@@ -127,6 +127,7 @@ namespace hirschberg_viterbi {
         // 64-bit to avoid potential overflow for audio past 17.4 hours
         int64_t logits_stride = logits.stride(0);
 
+        backtrack_t backedges(logits_right - logits_left, max_width);
 
         scalar_t* cur_probs = new scalar_t[4+max_width];
         scalar_t* prev_probs;
@@ -141,8 +142,6 @@ namespace hirschberg_viterbi {
         for (int i=0;i<5;++i) cur_probs[i] = mask_val;
         prev_probs[0] = prev_probs[1] = mask_val;
         cur_probs[2] = 0;
-
-        backtrack_t backedges(logits_right - logits_left, max_width);
 
         cur_probs+=2;
         prev_probs+=2;
@@ -511,6 +510,8 @@ namespace hirschberg_viterbi {
         const double silence,
         const double padding,
         const int64_t soft_mem_limit) {
+
+        STD_TORCH_CHECK(soft_mem_limit >= 0, "soft_mem_limit must be non-negative.");
 
         pruning_check(var_rat, confidence, accuracy, precision, recall, silence, padding);
 
