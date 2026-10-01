@@ -69,6 +69,10 @@ namespace hirschberg_viterbi {
         // make tensors contiguous for caching purposes
         auto cont_targets = torch::stable::contiguous(targets);
 
+        // potentially check that log_probs are valid outputs in (-inf, 0]
+        // the algorithm still works if the log probs are shifted, so I haven't
+        // added that as a requirement in case there is a use case for it.
+
         // check targ_pointer values
         int num_repeats = 0;
         {
