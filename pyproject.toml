@@ -6,6 +6,19 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+# the limited abi should support multiple python versions
+# do not build free-threaded versions because they will not work
+[tool.cibuildwheel]
+build = "cp310-manylinux_*"
+skip = "cp3??t-*"
+
+[tool.cibuildwheel.linux]
+# Tells auditwheel to skip trying to bundle or locate PyTorch core binaries
+manylinux-x86_64-image = "manylinux_2_28"
+# might need to change for gpu builds
+environment = { PIP_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu" }
+repair-wheel-command = "auditwheel repair --exclude libc10.so --exclude libtorch.so --exclude libtorch_cpu.so --exclude libtorch_python.so -w {dest_dir} {wheel}"
+
 [project]
 name = "hirschberg-viterbi"
 version = "0.1.0"
@@ -18,7 +31,9 @@ authors = [
     {name = "Lawry Sorenson", email = "lawrysorenson@byu.edu"}
 ]
 dependencies = [
+    "build>=1.6.1",
     "torch>=2.10.0",
+    "twine>=7.0.0",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

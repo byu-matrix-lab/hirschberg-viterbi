@@ -16,6 +16,12 @@ We also give credit to [`ctc-forced-aligner`](https://github.com/MahmoudAshraf97
 
 ## Installation
 
+Install from PyPI:
+
+```
+pip install hirschberg-viterbi
+```
+
 Install from source:
 
 ```
@@ -25,6 +31,23 @@ pip install -e .
 ```
 
 ## Usage
+
+### `torchaudio` replacement
+
+To optimize `torchaudio` forced alignment while producing the same answer, simply substitute:
+
+```python
+torchaudio.functional.forced_align(log_probs, targets)
+```
+
+with
+
+```
+import hirschberg_viterbi
+hirschberg_viterbi.hirschberg_viterbi(log_probs.cpu(), targets.cpu().int())
+```
+
+### Detailed Usage
 
 There are 4 alignment methods in this package: `viterbi`, `hirschberg_viterbi`, `pruned_viterbi`, and `pruned_hirschberg_viterbi`, depending on which optimizations you want to use. We recommend always using the Hirschberg optimization, as it was always beneficial in our experiments.
 
