@@ -31,7 +31,7 @@ end = time.time()
 print('Hirschberg-Viterbi runtime (s):', end - start)
 
 start = time.time()
-# our approach is more numerically stable than torchaudio, so we upcase to double to check that they match
+# our approach is more numerically stable than torchaudio, so we cast to double to check that they match
 # using floats here makes torchaudio give a different answer
 a2, b = torchaudio.functional.forced_align(log_probs.unsqueeze(0).double(), cleaned.unsqueeze(0))
 end = time.time()
