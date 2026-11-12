@@ -264,7 +264,7 @@ namespace hirschberg_viterbi {
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
 
-        auto text = text_holder.get() + 2;
+        auto text = text_holder.mutable_data_ptr<int32_t>()+2;
         
         // allow double for log_prob data type
         // but I think ints can be used for all reasonable character sets and times
@@ -300,7 +300,7 @@ namespace hirschberg_viterbi {
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
 
-        auto text = text_holder.get() + 2;
+        auto text = text_holder.mutable_data_ptr<int32_t>()+2;
             
         // allow double for log_prob data type
         // but I think ints can be used for all reasonable character sets and times

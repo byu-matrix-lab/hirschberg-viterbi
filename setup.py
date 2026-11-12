@@ -57,7 +57,11 @@ def get_extensions():
     else:
         extra_link_args.append("-flto")
         extra_compile_args["cxx"].append("-flto")
-        extra_compile_args["nvcc"].extend(["-Xcompiler=-flto"])
+        # TODO: revisit this option for potential helpers.cu
+        extra_compile_args["nvcc"].extend([
+            "-Xcompiler=-flto",
+            "-Xfatbin=-no-asm"
+        ])
 
     this_dir = os.path.dirname(os.path.relpath(__file__))
     extensions_dir = os.path.join(this_dir, library_name, "csrc")
@@ -68,6 +72,7 @@ def get_extensions():
 
     if use_cuda:
         sources += cuda_sources
+        extra_compile_args["cxx"].append("-DUSE_CUDA")
 
     ext_modules = [
         extension(

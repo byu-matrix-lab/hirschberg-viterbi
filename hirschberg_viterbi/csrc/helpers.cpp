@@ -17,13 +17,21 @@ using torch::headeronly::DeviceType;
 
 namespace hirschberg_viterbi {
     template<typename target_t>
-    std::pair<std::unique_ptr<target_t[]>, int> add_blanks(
+    std::pair<Tensor, int> add_blanks(
         const Tensor& targets,
-        const target_t blank) {
+        const target_t blank,
+        device_tag<DeviceType::CPU>) {
         int n = targets.size(0);
 
-        std::unique_ptr<target_t[]> ans_holder = std::make_unique_for_overwrite<target_t[]>(2*n+5);
-        target_t* ans = ans_holder.get()+2;
+        Tensor ans_holder = torch::stable::empty(
+            {2*n+5},
+            torch::headeronly::CppTypeToScalarType<target_t>::value,
+            torch::headeronly::Layout::Strided,
+            targets.device(),
+            false // don't pin memory
+        );
+
+        target_t* ans = ans_holder.mutable_data_ptr<target_t>()+2;
         
         auto* const targ_view = targets.const_data_ptr<target_t>();
         for (int i=0;i<n;++i) {
@@ -39,12 +47,52 @@ namespace hirschberg_viterbi {
         return {std::move(ans_holder), 2*n+1};
     }
 
-    template std::pair<std::unique_ptr<int32_t[]>, int> add_blanks<int32_t>(
+    template std::pair<Tensor, int> add_blanks<int32_t>(
         const Tensor& targets,
-        const int32_t blank);
+        const int32_t blank,
+        device_tag<DeviceType::CPU>);
+
+    template<typename target_t>
+    void check_targets(
+        const Tensor& targets,
+        int sequence_length,
+        target_t charset_size,
+        target_t blank,
+        device_tag<DeviceType::CPU>) {
+        // targets must be contiguous here
+        const target_t* targ_pointer = targets.const_data_ptr<target_t>();
+
+        int num_repeats = 0;
+        target_t pval = -1;
+        for (int i=0;i<targets.size(0);++i) {
+            target_t val = targ_pointer[i];
+            STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
+            STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
+            num_repeats+=(val==pval);
+            pval=val;
+        }
+
+        STD_TORCH_CHECK(
+            num_repeats + targets.size(0) <= sequence_length,
+            "Target sequence too long for CTC. Found log_probs length ",
+            sequence_length,
+            " < target length ",
+            targets.size(0),
+            " + ",
+            num_repeats,
+            " repeats."
+        );
+    }
+
+    template void check_targets<int32_t>(
+        const Tensor& targets,
+        int sequence_length,
+        int32_t charset_size,
+        int32_t blank,
+        device_tag<DeviceType::CPU>);
 
     template<DeviceType device, typename target_t>
-    std::tuple<std::unique_ptr<target_t[]>, int, Tensor, Tensor> common_setup(
+    std::tuple<Tensor, int, Tensor, Tensor> common_setup(
         const Tensor& log_probs,
         const Tensor& targets,
         const target_t blank) {
@@ -76,46 +124,12 @@ namespace hirschberg_viterbi {
         // the algorithm still works if the log probs are shifted, so I haven't
         // added that as a requirement in case there is a use case for it.
 
-        // check targ_pointer values
-        int num_repeats = 0;
-        {
-            const target_t* targ_pointer;
-            if constexpr (device == DeviceType::CPU) {
-            targ_pointer = cont_targets.const_data_ptr<target_t>();
-            } else {
-                assert(false);
-                // copy to cpu for this check (cpu targets might be needed elsewhere if basecase is solved on cpu)
-                // auto cpu_device = torch::stable::Device("cpu");
-                // auto cpu_targets = torch::stable::to(cont_targets, cpu_device);
-                // targ_pointer = cpu_targets.const_data_ptr<target_t>();
-                // still deciding whether this should be be a kernel to avoid data movement
-            }
-            // TODO: copy to cpu if needed here
-            target_t pval = -1;
-            for (int i=0;i<cont_targets.size(0);++i) {
-                target_t val = targ_pointer[i];
-                STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
-                STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
-                num_repeats+=(val==pval);
-                pval=val;
-            }
-        }
-
-        STD_TORCH_CHECK(
-            num_repeats + cont_targets.size(0) <= log_probs.size(0),
-            "Target sequence too long for CTC. Found log_probs length ",
-            log_probs.size(0),
-            " < target length ",
-            cont_targets.size(0),
-            " + ",
-            num_repeats,
-            " repeats."
-        );
+        check_targets<target_t>(cont_targets, log_probs.size(0), charset_size, blank, device_tag<device>{});
 
         const int64_t T = log_probs.size(0);
 
         // first memory allocation here
-        auto [text, text_len] = add_blanks<int32_t>(cont_targets, blank);
+        auto [text, text_len] = add_blanks<target_t>(cont_targets, blank, device_tag<device>{});
 
         auto ans = torch::stable::empty(
             {T},
@@ -126,19 +140,21 @@ namespace hirschberg_viterbi {
         );
 
         auto cont_log_probs = torch::stable::contiguous(log_probs);
-        return {std::move(text), text_len, cont_log_probs, ans};
+        return {std::move(text), text_len, std::move(cont_log_probs), std::move(ans)};
     }
 
-    template std::tuple<std::unique_ptr<int32_t[]>, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
+    template std::tuple<Tensor, int, Tensor, Tensor> common_setup<DeviceType::CPU, int32_t>(
         const Tensor& log_probs,
         const Tensor& targets,
         const int32_t blank);
-
-    // template std::tuple<std::unique_ptr<int32_t[]>, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
+    
+    // shared logic that only exists if building for cuda
+    #ifdef USE_CUDA
+    // template std::tuple<Tensor, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
     //     const Tensor& log_probs,
     //     const Tensor& targets,
     //     const int32_t blank);
-
+    #endif
 
     void pruning_check(
         double var_rat,

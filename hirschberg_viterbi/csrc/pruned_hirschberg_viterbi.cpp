@@ -449,7 +449,7 @@ namespace hirschberg_viterbi {
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
 
-        auto text = text_holder.get()+2;
+        auto text = text_holder.mutable_data_ptr<int32_t>()+2;
         
         int32_t T = cont_log_probs.size(0);
 
@@ -520,7 +520,7 @@ namespace hirschberg_viterbi {
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CPU, int32_t>(log_probs, targets, blank);
 
-        auto text = text_holder.get()+2;
+        auto text = text_holder.mutable_data_ptr<int32_t>()+2;
         
         int32_t T = cont_log_probs.size(0);
         

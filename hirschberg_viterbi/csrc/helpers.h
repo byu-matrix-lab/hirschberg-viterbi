@@ -10,6 +10,9 @@
 
 namespace hirschberg_viterbi {
 
+    template<torch::headeronly::DeviceType device>
+    using device_tag = std::integral_constant<torch::headeronly::DeviceType, device>;
+
     // I did not see any gains from using this with hirschberg viterbi
     struct bt_two_bits {
         int max_width;
@@ -63,15 +66,43 @@ namespace hirschberg_viterbi {
     };
 
     template<typename target_t>
-    std::pair<std::unique_ptr<target_t[]>, int> add_blanks(
+    std::pair<torch::stable::Tensor, int> add_blanks(
         const torch::stable::Tensor& targets,
-        const target_t blank);
+        const target_t blank,
+        device_tag<torch::headeronly::DeviceType::CPU>);
+
+    template<typename target_t>
+    void check_targets(
+        const torch::stable::Tensor& targets,
+        int sequence_length,
+        target_t charset_size,
+        target_t blank,
+        device_tag<torch::headeronly::DeviceType::CPU>);
 
     template<torch::headeronly::DeviceType device, typename target_t>
-    std::tuple<std::unique_ptr<target_t[]>, int, torch::stable::Tensor, torch::stable::Tensor> common_setup(
+    std::tuple<torch::stable::Tensor, int, torch::stable::Tensor, torch::stable::Tensor> common_setup(
         const torch::stable::Tensor& log_probs,
         const torch::stable::Tensor& targets,
         const target_t blank = 0);
+
+    // cuda specializations if building with cuda
+    #ifdef USE_CUDA
+    // TODO: this needs to be defined still
+    // template<typename target_t>
+    // std::pair<torch::stable::Tensor, int> add_blanks(
+    //     const torch::stable::Tensor& targets,
+    //     const target_t blank,
+    //     device_tag<torch::headeronly::DeviceType::CUDA>);
+    
+    // template<typename target_t>
+    // void check_targets(
+    //     const torch::stable::Tensor& targets, 
+    //     int sequence_length,
+    //     target_t charset_size,
+    //     target_t blank,
+    //     device_tag<torch::headeronly::DeviceType::CUDA>);
+    #endif
+
 
     template<typename scalar_t>
     inline void rescale_max(scalar_t* array, int size) {
