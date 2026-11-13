@@ -87,20 +87,19 @@ namespace hirschberg_viterbi {
 
     // cuda specializations if building with cuda
     #ifdef USE_CUDA
-    // TODO: this needs to be defined still
-    // template<typename target_t>
-    // std::pair<torch::stable::Tensor, int> add_blanks(
-    //     const torch::stable::Tensor& targets,
-    //     const target_t blank,
-    //     device_tag<torch::headeronly::DeviceType::CUDA>);
+    template<typename target_t>
+    std::pair<torch::stable::Tensor, int> add_blanks(
+        const torch::stable::Tensor& targets,
+        const target_t blank,
+        device_tag<torch::headeronly::DeviceType::CUDA>);
     
-    // template<typename target_t>
-    // void check_targets(
-    //     const torch::stable::Tensor& targets, 
-    //     int sequence_length,
-    //     target_t charset_size,
-    //     target_t blank,
-    //     device_tag<torch::headeronly::DeviceType::CUDA>);
+    template<typename target_t>
+    void check_targets(
+        const torch::stable::Tensor& targets, 
+        int sequence_length,
+        target_t charset_size,
+        target_t blank,
+        device_tag<torch::headeronly::DeviceType::CUDA>);
     #endif
 
 

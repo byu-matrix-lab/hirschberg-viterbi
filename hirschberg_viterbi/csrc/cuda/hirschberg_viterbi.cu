@@ -16,6 +16,8 @@
 #include "../helpers.h"
 
 using torch::stable::Tensor;
+using torch::headeronly::ScalarType;
+using torch::headeronly::DeviceType;
 
 using namespace std;
 
@@ -25,9 +27,25 @@ namespace hirschberg_viterbi {
         const Tensor& log_probs,
         const Tensor& targets,
         const int32_t blank=0) {
-        STD_TORCH_CHECK(false, "CUDA alignment has not been implemented yet. Please move tensors to cpu.");
 
-        return log_probs;
+        auto [text_holder, text_len, cont_log_probs, ans] =
+            common_setup<DeviceType::CUDA, int32_t>(log_probs, targets, blank);
+
+        cout << "POINT C" << endl;
+
+        auto run = [&]<typename scalar_t>() {
+            // call the base alignment function here
+            // dummy function here just returns 0s for all the alignment
+            cudaMemset(ans.mutable_data_ptr<int32_t>(), 0, ans.size(0)*4);
+        };
+
+        if (log_probs.scalar_type() == torch::headeronly::ScalarType::Double) {
+            run.template operator()<double>();
+        } else {
+            run.template operator()<float>();
+        }
+
+        return ans;
     }
 
     Tensor hirschberg_viterbi_cuda(
@@ -35,6 +53,7 @@ namespace hirschberg_viterbi {
         const Tensor& targets,
         const int32_t blank=0,
         const int64_t soft_mem_limit=1000) {
+
         STD_TORCH_CHECK(false, "CUDA alignment has not been implemented yet. Please move tensors to cpu.");
 
         return log_probs;
@@ -45,4 +64,4 @@ namespace hirschberg_viterbi {
         m.impl("hirschberg_viterbi", TORCH_BOX(&hirschberg_viterbi_cuda));
     }
 
-}
+} // end namespace

@@ -67,7 +67,7 @@ namespace hirschberg_viterbi {
         for (int i=0;i<targets.size(0);++i) {
             target_t val = targ_pointer[i];
             STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
-            STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
+            STD_TORCH_CHECK(0 < val && val < charset_size, "Target value ", val, "is outside character set [1, ",charset_size,")");
             num_repeats+=(val==pval);
             pval=val;
         }
@@ -150,10 +150,10 @@ namespace hirschberg_viterbi {
     
     // shared logic that only exists if building for cuda
     #ifdef USE_CUDA
-    // template std::tuple<Tensor, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
-    //     const Tensor& log_probs,
-    //     const Tensor& targets,
-    //     const int32_t blank);
+    template std::tuple<Tensor, int, Tensor, Tensor> common_setup<DeviceType::CUDA, int32_t>(
+        const Tensor& log_probs,
+        const Tensor& targets,
+        const int32_t blank);
     #endif
 
     void pruning_check(
