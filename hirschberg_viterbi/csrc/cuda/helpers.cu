@@ -17,6 +17,7 @@
 #include <cub/cub.cuh> // for prefix sums (useful for calculating placement with scans or memory partitions)
 
 #include "../helpers.h"
+#include "helpers.cuh"
 
 using torch::stable::Tensor;
 using torch::headeronly::ScalarType;
@@ -25,36 +26,6 @@ using torch::headeronly::DeviceType;
 using namespace std;
 
 namespace hirschberg_viterbi {
-
-    struct MinOp {
-    template <typename T>
-    __host__ __device__ constexpr T operator()(const T& a, const T& b) const {
-        return (a < b) ? a : b;
-    }
-    };
-
-    struct CudaDeleter {
-        void operator()(void* ptr) const noexcept {
-            if (ptr) {
-                cudaFree(ptr);
-            }
-        }
-    };
-
-    // 2. Create a convenient type alias (supports both single items and arrays T[])
-    template <typename T>
-    using cuda_unique_ptr = std::unique_ptr<T, CudaDeleter>;
-
-    // 3. Helper factory function (like std::make_unique)
-    template <typename T>
-    cuda_unique_ptr<T[]> make_cuda_unique(size_t count) {
-        T* ptr = nullptr;
-        cudaError_t err = cudaMalloc(&ptr, count * sizeof(T));
-        if (err != cudaSuccess) {
-            throw std::runtime_error(std::string("cudaMalloc failed: ") + cudaGetErrorString(err));
-        }
-        return cuda_unique_ptr<T[]>(ptr);
-    }
 
     // maybe remove print helpers, I don't know how helpful they are or what format I would want them to take
 
@@ -131,7 +102,7 @@ namespace hirschberg_viterbi {
         const int32_t blank,
         device_tag<DeviceType::CUDA>);
 
-    struct CheckTargetResponse{
+    struct check_target_response {
         int bad_ind;
         int bad_val;
         int count_repeats;
@@ -140,7 +111,7 @@ namespace hirschberg_viterbi {
     // this one is just a sanity check
 
     template<typename target_t>
-    __global__ void check_targets_kernel(target_t* const targets, int target_length, target_t charset_size, target_t blank, CheckTargetResponse* ans) {
+    __global__ void check_targets_kernel(target_t* const targets, int target_length, target_t charset_size, target_t blank, check_target_response* ans) {
         // each thread computes first bad index and total number of repeats (will need logic for thread 0)
         int bad_ind = target_length;
         int count = 0;
@@ -152,13 +123,14 @@ namespace hirschberg_viterbi {
             count += i>0 && targets[i] == targets[i-1];
         }
 
-        // TODO: I think a device scan with thrust could be faster here by sharding across SMS
+        // TODO: I think a device scan with thrust could be faster here by sharding across SMs
         // but this is good enough for now
 
         using BlockReduceT = cub::BlockReduce<int, 1024>;
         __shared__ typename BlockReduceT::TempStorage temp_storage;
 
-        bad_ind = BlockReduceT(temp_storage).Reduce(bad_ind, MinOp{});
+        bad_ind = BlockReduceT(temp_storage).Reduce(bad_ind, min_op{});
+        __syncthreads(); // could be removed if I use another temp storage
         count = BlockReduceT(temp_storage).Sum(count);
 
         // accumulate at the end 
@@ -183,12 +155,12 @@ namespace hirschberg_viterbi {
 
         // will want a struct back from the kernel
         // consider using a tensor holder here for consistency
-        auto res_device_holder = make_cuda_unique<CheckTargetResponse>(1);
+        auto res_device_holder = make_cuda_unique<check_target_response>(1);
 
         check_targets_kernel<target_t><<<1, 1024>>>(targ_pointer, targets.size(0), charset_size, blank, res_device_holder.get());
 
-        CheckTargetResponse res;
-        cudaMemcpy(&res, res_device_holder.get(), sizeof(CheckTargetResponse), cudaMemcpyDeviceToHost);
+        check_target_response res;
+        cudaMemcpy(&res, res_device_holder.get(), sizeof(check_target_response), cudaMemcpyDeviceToHost);
         
         if (res.bad_ind < targets.size(0)) {
             STD_TORCH_CHECK(res.bad_val != blank, "Blank should not occur in targets (index ", res.bad_ind,")");
