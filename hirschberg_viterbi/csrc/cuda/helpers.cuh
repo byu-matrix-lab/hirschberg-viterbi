@@ -12,6 +12,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <cub/cub.cuh>
 
 using torch::stable::Tensor;
 
@@ -85,6 +86,13 @@ namespace hirschberg_viterbi {
     }
     };
 
+    struct max_op {
+    template <typename T>
+    __host__ __device__ constexpr T operator()(const T& a, const T& b) const {
+        return (a > b) ? a : b;
+    }
+    };
+
     struct cuda_deleter {
         void operator()(void* ptr) const noexcept {
             if (ptr) {
@@ -106,6 +114,60 @@ namespace hirschberg_viterbi {
             throw std::runtime_error(std::string("cudaMalloc failed: ") + cudaGetErrorString(err));
         }
         return cuda_unique_ptr<T[]>(ptr);
+    }
+
+    // maybe add some template programming here to select the number of threads
+    
+    template<typename scalar_t, int threads, bool single_warp>
+    __device__ void cuda_rescale_max(scalar_t* array, int size) {
+        if constexpr (single_warp || threads == 32) {
+            using WarpReduceT = cub::WarpReduce<scalar_t>;
+            __shared__ typename WarpReduceT::TempStorage temp_storage[threads / 32];
+
+            auto op = max_op{};
+
+            scalar_t local = -std::numeric_limits<scalar_t>::infinity();
+            for (int i=threadIdx.x%32; i < size; i += 32) local = op(local, array[i]);
+
+            scalar_t block_max = WarpReduceT(temp_storage[threadIdx.x / 32]).Reduce(local, op);
+            __shared__ scalar_t block_high;
+            if (threadIdx.x == 0) block_high = block_max;
+
+            const scalar_t offset = block_high;
+            for (int i=threadIdx.x%32; i<size; i += 32) array[i] -= offset;
+        } else {
+            using BlockReduceT = cub::BlockReduce<scalar_t, threads>;
+            __shared__ typename BlockReduceT::TempStorage temp_storage;
+
+            auto op = max_op{};
+
+            scalar_t local = -std::numeric_limits<scalar_t>::infinity();
+            for (int i=threadIdx.x; i < size; i += threads) local = op(local, array[i]);
+
+            scalar_t block_max = BlockReduceT(temp_storage).Reduce(local, op);
+
+            __shared__ scalar_t block_high;
+
+            if (threadIdx.x == 0) block_high = block_max;
+
+            __syncthreads();
+
+            const scalar_t offset = block_high;
+
+            for (int i=threadIdx.x; i<size; i += threads) array[i] -= offset;
+        }
+    }
+
+    template<typename scalar_t, bool single_warp = false, int candidate = 32>
+    __device__ void cuda_rescale_max_dispatch(scalar_t* array, int size, int threads) {
+        if (threads == candidate) {
+            cuda_rescale_max<scalar_t, candidate, single_warp>(array, size);
+        } else if constexpr (candidate < 1024) {
+            cuda_rescale_max_dispatch<scalar_t, single_warp, candidate + 32>(
+                array, size, threads);
+        } else {
+            assert(false);
+        }
     }
 
     // TODO: add a print tensor function here

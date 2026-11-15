@@ -106,15 +106,14 @@ namespace hirschberg_viterbi {
 
                 if constexpr (!single_warp_align) __syncthreads();
                 
-                // add this later
                 // warp reduce vs block reduce for the shifting here, probably just overallocate memory and use num_valid
                 // otherwise consider templating the other function but not this function.
-                //     // if float shift max to 0 for numerical stability on long inputs
-                //     if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
-                //         if (time % RESCALE_MAX_FREQ == 0) rescale_max(cur_probs, max_width);
-                //     }
+                // if float shift max to 0 for numerical stability on long inputs
+                if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
+                    // TODO: need to be able to select the number of threads
+                    if (time % RESCALE_MAX_FREQ == 0) cuda_rescale_max_dispatch<scalar_t, single_warp_align>(cur_probs, max_width, threads_per_task);
+                }
             }
-
 
             // how to handle syncing (I might want the number of threads )
         }
