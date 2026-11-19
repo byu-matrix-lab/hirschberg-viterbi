@@ -185,4 +185,13 @@ namespace hirschberg_viterbi {
         int32_t charset_size,
         int32_t blank,
         device_tag<DeviceType::CUDA>);
+    
+    __host__ int compute_max_tasks(int logits_length) {
+        int ans = 0;
+        // 15 logits can have at most 2*15+1 text positions
+        // this ensures the alignment will fit in a single warp
+        // repeatedly divide by 2, rounding up, until 15 is reached
+        while (logits_length > 15) ++ans, logits_length = (logits_length+1)>>1;
+        return 1<<ans;
+    }
 };

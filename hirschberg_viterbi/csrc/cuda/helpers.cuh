@@ -57,7 +57,7 @@ namespace hirschberg_viterbi {
         }
     };
 
-    template<typename backtrack_t, typename scalar_t, typename target_t>
+    template<typename scalar_t, typename target_t>
     struct alignment_task {
         // these four fields are const across recursion levels. Potentially remove them
         // but they could be useful for alignment multiple sequences at once
@@ -69,6 +69,7 @@ namespace hirschberg_viterbi {
         int logits_right;
         int text_left;
         int text_right;
+        int max_width;
 
         // no soft mem limit because I am using a different recursive ending (and it doesn't depend on each subtask)
 
@@ -76,7 +77,24 @@ namespace hirschberg_viterbi {
         // need to consider if it will be included or not
         scalar_t* cur_probs;
         scalar_t* prev_probs;
-        backtrack_t backtrack;
+        // maybe add two pointers here instead (unified memory, but different params)
+        // replace backtrack with another void*
+        void* data1;
+        void* data2;
+    };
+
+    // trailing allocator removes one level of pointer indirection
+    template<typename task_t>
+    struct alignas(task_t) task_pool {
+        static_assert(alignof(task_t) >= alignof(int));
+        int num_tasks;
+        int capacity;
+
+        // maybe just overwrite the [] operator to return specific indices
+        __device__ task_t* data() {
+            static_assert(sizeof(task_t) > sizeof(this));
+            return reinterpret_cast<task_t*>(this) + 1;
+        }
     };
 
     struct min_op {
@@ -129,12 +147,17 @@ namespace hirschberg_viterbi {
             scalar_t local = -std::numeric_limits<scalar_t>::infinity();
             for (int i=threadIdx.x%32; i < size; i += 32) local = op(local, array[i]);
 
-            scalar_t block_max = WarpReduceT(temp_storage[threadIdx.x / 32]).Reduce(local, op);
-            __shared__ scalar_t block_high;
-            if (threadIdx.x == 0) block_high = block_max;
+            int warpInd = threadIdx.x / 32;
+            scalar_t block_max = WarpReduceT(temp_storage[warpInd]).Reduce(local, op);
+            __shared__ scalar_t block_high[threads / 32];
+            if (threadIdx.x%32 == 0) block_high[warpInd] = block_max;
 
-            const scalar_t offset = block_high;
+            __syncwarp();
+
+            const scalar_t offset = block_high[warpInd];
             for (int i=threadIdx.x%32; i<size; i += 32) array[i] -= offset;
+
+            __syncwarp();
         } else {
             using BlockReduceT = cub::BlockReduce<scalar_t, threads>;
             __shared__ typename BlockReduceT::TempStorage temp_storage;
@@ -155,6 +178,9 @@ namespace hirschberg_viterbi {
             const scalar_t offset = block_high;
 
             for (int i=threadIdx.x; i<size; i += threads) array[i] -= offset;
+
+            // is this needed?
+            __syncthreads();
         }
     }
 
@@ -172,4 +198,5 @@ namespace hirschberg_viterbi {
 
     // TODO: add a print tensor function here
 
+    __host__ int compute_max_tasks(int logits_length);
 };
