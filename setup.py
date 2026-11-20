@@ -52,7 +52,7 @@ def get_extensions():
 
     if debug_mode:
         extra_compile_args["cxx"].append("-g")
-        extra_compile_args["nvcc"].append("-g")
+        extra_compile_args["nvcc"].extend(["-g", "-lineinfo", "--Ofast-compile=max"])
         extra_link_args.extend(["-O0", "-g"])
     else:
         extra_link_args.append("-flto")

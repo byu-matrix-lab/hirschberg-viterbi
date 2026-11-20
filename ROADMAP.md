@@ -36,6 +36,8 @@ I am planning for each kernel launch to take a list of subproblems at one recurs
 
 When the number of subproblems is less than the number of available SMs, the forward and backwards passes could be further split across thread blocks to allow even greater parallelization. This would be particularly useful when solving the top-level problem.
 
+If the problem itself is massive, each step could be split into its own kernel so that one block does not read the whole transcript. I'll consider whether to implement this once everything else is done. This would give significant speedups to very long inputs where the initial task takes a long time to complete. This has the potential for 100x speedup (depending on the sm count), but adds more developer overhead.
+
 Since in-kernel memory allocations are relatively expensive, the host could request a single working memory pool for all thread blocks at the start of the alignment. A separate kernel launch could reshard this memory pool for the current subproblem sizes at each level of recursion using a prefix sum.
 
 The bounds themselves could also be computed on device using prefix min/max operations, fully eliminating inter-device communication during alignment. This could enable CUDA graph captures for alignments, though the API would need to change to accept sequence length parameters. I expect that graph captures would probably have limited benefit though, as I estimate that aligning a 3-hour audio would only require about 40 kernel launches under this setup, which is relatively small compared to the amount of work that will be done. The current `torchaudio` implementation launches $540,000$ kernels to solve the same problem.

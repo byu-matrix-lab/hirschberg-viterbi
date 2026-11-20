@@ -20,6 +20,11 @@ using namespace std;
 
 namespace hirschberg_viterbi {
 
+    enum class alignment_type {
+        viterbi,
+        hirschberg_viterbi
+    };
+
     // rounds up an address to 128-bytes
     // I think this might avoid cache conflicts between sms
     // but I would want to profile it (against a no-op version)
@@ -59,6 +64,9 @@ namespace hirschberg_viterbi {
 
     template<typename scalar_t, typename target_t>
     struct alignment_task {
+        using scalar_type = scalar_t;
+        using target_type = target_t;
+
         // these four fields are const across recursion levels. Potentially remove them
         // but they could be useful for alignment multiple sequences at once
         const scalar_t* logits_ptr;
@@ -91,7 +99,7 @@ namespace hirschberg_viterbi {
         int capacity;
 
         // maybe just overwrite the [] operator to return specific indices
-        __device__ task_t* data() {
+        __host__ __device__ task_t* data() {
             static_assert(sizeof(task_t) > sizeof(this));
             return reinterpret_cast<task_t*>(this) + 1;
         }
@@ -195,6 +203,12 @@ namespace hirschberg_viterbi {
             assert(false);
         }
     }
+
+    template<typename task_t, alignment_type tag, typename backtrack_t = void>
+    void reshard_memory(task_pool<task_t>* tasks, uint8_t* mem_pool, size_t mem_size, int n = -1);
+
+    template<typename task_t, alignment_type tag, typename backtrack_t = void>
+    size_t compute_reshard_memory_space(int n);
 
     // TODO: add a print tensor function here
 

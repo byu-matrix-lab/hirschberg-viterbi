@@ -16,6 +16,11 @@
 #include <cuda/functional>
 #include <cub/cub.cuh> // for prefix sums (useful for calculating placement with scans or memory partitions)
 
+#include <thrust/iterator/iterator_facade.h>
+#include <thrust/iterator/transform_iterator.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <cstddef>
+
 #include "../helpers.h"
 #include "helpers.cuh"
 
@@ -117,9 +122,10 @@ namespace hirschberg_viterbi {
         int count = 0;
 
         for(int i=blockIdx.x * blockDim.x + threadIdx.x;i<target_length;i+=blockDim.x) {
-            if (targets[i] <= 0 || targets[i] >= charset_size) bad_ind = i;
-            // with the assumption that data is passed correctly, does this sync slow down the kernel (likely yes)
-            if (__any_sync(0xffffffffu, bad_ind < target_length)) break;
+            if (targets[i] <= 0 || targets[i] >= charset_size) {
+                bad_ind = i;
+                break;
+            }
             count += i>0 && targets[i] == targets[i-1];
         }
 
@@ -159,8 +165,15 @@ namespace hirschberg_viterbi {
 
         check_targets_kernel<target_t><<<1, 1024>>>(targ_pointer, targets.size(0), charset_size, blank, res_device_holder.get());
 
+        // TODO: propagate these error checkers through all of the cuda
+        auto err = cudaGetLastError();
+        STD_TORCH_CHECK(err == cudaSuccess, "check_targets launch failed: ", cudaGetErrorString(err));
+
         check_target_response res;
-        cudaMemcpy(&res, res_device_holder.get(), sizeof(check_target_response), cudaMemcpyDeviceToHost);
+        err = cudaMemcpy(&res, res_device_holder.get(), sizeof(check_target_response), cudaMemcpyDeviceToHost);
+
+        STD_TORCH_CHECK(err == cudaSuccess,
+                        "check_targets result copy failed: ", cudaGetErrorString(err));
         
         if (res.bad_ind < targets.size(0)) {
             STD_TORCH_CHECK(res.bad_val != blank, "Blank should not occur in targets (index ", res.bad_ind,")");
@@ -194,4 +207,173 @@ namespace hirschberg_viterbi {
         while (logits_length > 15) ++ans, logits_length = (logits_length+1)>>1;
         return 1<<ans;
     }
+
+    template<typename task_t, alignment_type tag, typename backtrack_t = void>
+    struct MemoryRef {
+        using scalar_t = typename task_t::scalar_type;
+        task_t* p;
+        uint8_t* mem_pool;
+        size_t mem_size; // could be size_t instead
+
+        __host__ __device__
+        operator size_t() const {
+            size_t ans;
+            if constexpr (tag == alignment_type::viterbi) {
+                ans = (p->max_width + 2)*sizeof(scalar_t)*2 + backtrack_t::needed_size(p->logits_right - p->logits_left, p->max_width);
+            } else {
+                // in hirschberg_viterbi
+                ans = (p->max_width + 2)*sizeof(scalar_t)*4;
+            }
+            // pruned ones will need more padding here
+
+            // align up to next cache line
+            ans = (ans + size_t{127}) & ~size_t{127};
+            return ans;
+        }
+
+        __host__ __device__
+        MemoryRef& operator=(size_t value) {
+            // must change only this task here
+            // fill in the pointers correctly
+
+            // could be removed after debug?
+            assert(value + (size_t)(*this) <= mem_size);
+
+            uint8_t* allocation = mem_pool + value;
+
+            if constexpr (tag == alignment_type::viterbi) {
+                size_t size_per_row = (p->max_width + 2)*sizeof(scalar_t);
+
+                p->cur_probs = (scalar_t*)(allocation) + 2;
+                p->prev_probs = (scalar_t*)(allocation + size_per_row) + 2;
+                p->data1 = (void*)(allocation + size_per_row*2);
+                p->data2 = nullptr;
+
+            } else {
+                // in hirschberg_viterbi
+                size_t size_per_row = (p->max_width + 2)*sizeof(scalar_t);
+
+                p->cur_probs = (scalar_t*)(allocation) + 2;
+                p->prev_probs = (scalar_t*)(allocation + size_per_row) + 2;
+
+                // important that these two are right padded instead of left padded
+                p->data1 = (void*)(allocation + size_per_row*2);
+                p->data2 = (void*)(allocation + size_per_row*3);
+            }
+            return *this;
+        }
+
+        MemoryRef& operator=(const MemoryRef&) = delete;
+    };
+
+    template<typename task_t, alignment_type tag, typename backtrack_t = void>
+    struct MakeMemoryRef {
+        task_t* tasks;
+        uint8_t* mem_pool;
+        size_t mem_size;
+
+        __host__ __device__
+        MemoryRef<task_t, tag, backtrack_t> operator()(size_t index) const {
+            // is this safe?
+            return {tasks + index, mem_pool, mem_size};
+        }
+    };
+
+    template<typename task_t, alignment_type tag, typename backtrack_t = void>
+    using MemoryScanIterator = thrust::transform_iterator<
+        MakeMemoryRef<task_t, tag, backtrack_t>,
+        thrust::counting_iterator<size_t>,
+        MemoryRef<task_t, tag, backtrack_t>,
+        std::size_t
+    >;
+
+    template<typename task_t, alignment_type tag, typename backtrack_t>
+    void reshard_memory(task_pool<task_t>* tasks, uint8_t* mem_pool, size_t mem_size, int n) {
+        // add path where it copies the size from device if not included
+        assert(n != -1);
+
+        assert((uintptr_t)mem_pool % 128 == 0);
+
+        using iterator_t = MemoryScanIterator<task_t, tag, backtrack_t>;
+        using maker_t = MakeMemoryRef<task_t, tag, backtrack_t>;
+
+        // // d_tasks points to the first task in device memory.
+        iterator_t it(thrust::counting_iterator<size_t>{0}, maker_t{tasks->data(), mem_pool, mem_size});
+
+        auto err = cub::DeviceScan::ExclusiveSum(mem_pool, mem_size, it, it, n);
+
+        STD_TORCH_CHECK(err == cudaSuccess, "failed to partition memory pool between tasks", cudaGetErrorString(err));
+    }
+
+    template<typename task_t, alignment_type tag, typename backtrack_t>
+    size_t compute_reshard_memory_space(int n) {
+
+        using iterator_t = MemoryScanIterator<task_t, tag, backtrack_t>;
+        using maker_t = MakeMemoryRef<task_t, tag, backtrack_t>;
+
+        // // d_tasks points to the first task in device memory.
+        iterator_t it(thrust::counting_iterator<size_t>{0}, maker_t{(task_t*)nullptr, (uint8_t*)nullptr, 0});
+
+        size_t ans = 0;
+
+        auto err = cub::DeviceScan::ExclusiveSum(nullptr, ans, it, it, n);
+
+        // TODO: add more of these
+        STD_TORCH_CHECK(err == cudaSuccess, "failed to compute memory needed for partitioning kernel", cudaGetErrorString(err));
+
+        return ans;
+    }
+
+    template void reshard_memory<
+            alignment_task<double, int32_t>,
+            alignment_type::viterbi,
+            bt_full_byte_device>(
+        task_pool<alignment_task<double, int32_t>>* tasks,
+        uint8_t* mem_pool,
+        size_t mem_size,
+        int n);
+
+    template void reshard_memory<
+            alignment_task<float, int32_t>,
+            alignment_type::viterbi,
+            bt_full_byte_device>(
+        task_pool<alignment_task<float, int32_t>>* tasks,
+        uint8_t* mem_pool,
+        size_t mem_size,
+        int n);
+
+    template void reshard_memory<
+            alignment_task<double, int32_t>,
+            alignment_type::hirschberg_viterbi>(
+        task_pool<alignment_task<double, int32_t>>* tasks,
+        uint8_t* mem_pool,
+        size_t mem_size,
+        int n);
+
+    template void reshard_memory<
+            alignment_task<float, int32_t>,
+            alignment_type::hirschberg_viterbi>(
+        task_pool<alignment_task<float, int32_t>>* tasks,
+        uint8_t* mem_pool,
+        size_t mem_size,
+        int n);
+
+    template size_t compute_reshard_memory_space<
+            alignment_task<double, int32_t>,
+            alignment_type::hirschberg_viterbi>(int n);
+
+    template size_t compute_reshard_memory_space<
+            alignment_task<double, int32_t>,
+            alignment_type::viterbi,
+            bt_full_byte_device>(int n);
+
+    template size_t compute_reshard_memory_space<
+            alignment_task<float, int32_t>,
+            alignment_type::hirschberg_viterbi>(int n);
+
+    template size_t compute_reshard_memory_space<
+            alignment_task<float, int32_t>,
+            alignment_type::viterbi,
+            bt_full_byte_device>(int n);
+
 };

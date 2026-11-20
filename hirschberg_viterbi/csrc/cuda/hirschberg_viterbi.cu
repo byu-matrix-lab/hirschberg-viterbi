@@ -80,8 +80,6 @@ namespace hirschberg_viterbi {
             
             const target_t* text = task.text + text_left;
 
-            // printf("%d %d\n", threadIdx.x, task.text_right);
-
             int64_t logits_stride = task.logits_stride;
             const scalar_t* logits_view=task.logits_ptr+logits_left*logits_stride;
 
@@ -173,7 +171,8 @@ namespace hirschberg_viterbi {
 
         int max_width = text_right;
         int step = (max_width + 2)*sizeof(scalar_t);
-        int64_t mem_needed = 2* sizeof(task_t) + step*2 + backtrack_t::needed_size(logits_right, max_width);
+        // 256 to satifsy the memory aligner requirements
+        int64_t mem_needed = 256 + 2* sizeof(task_t)+ step*2 + backtrack_t::needed_size(logits_right, max_width);
 
         // use a tensor to allocate the needed memory pool?
         auto device_holder = make_cuda_unique<uint8_t>(mem_needed);
@@ -181,6 +180,10 @@ namespace hirschberg_viterbi {
 
         pool_t* pool = (pool_t*)data;
         data += 2*sizeof(task_t);
+
+        // align up to 128
+
+        // also have this call the sharding kernel, if only to have a single source of truth, though it will add latency otherwize
 
         // otherwise need alignup and padded space
         static_assert(sizeof(task_t) % alignof(scalar_t) == 0);
@@ -206,10 +209,10 @@ namespace hirschberg_viterbi {
             .cur_probs = (scalar_t*)(data) + 2,
             .prev_probs = (scalar_t*)(data + step) + 2,
             .data1 = (void*)(data + step*2),
-            .data2 = 0
+            .data2 = nullptr
         };
 
-        cudaMemcpy(((task_t*)pool)+1, &task, sizeof(task_t), cudaMemcpyHostToDevice);
+        cudaMemcpy(pool->data(), &task, sizeof(task_t), cudaMemcpyHostToDevice);
 
         // launch the kernel now
         // don't launch more threads than needed (round up to next multiple of 32)
@@ -333,6 +336,80 @@ namespace hirschberg_viterbi {
         // that way the two sides can run on different sms
     }
 
+    template<typename scalar_t, typename target_t>
+    __global__ __launch_bounds__(1024) void _hirshberg_viterbi_postwork_kernel(
+        task_pool<alignment_task<scalar_t, target_t>>* in_pool,
+        task_pool<alignment_task<scalar_t, target_t>>* out_pool
+    ) {
+        int task_ind = blockIdx.x;
+        int work_ind = threadIdx.x;
+        int threads_per_task = blockDim.x;
+
+        if (task_ind >= in_pool->num_tasks) return;
+
+        auto& task = in_pool->data()[task_ind];
+
+        int text_left = task.text_left, text_right = task.text_right;
+        int logits_left = task.logits_left, logits_right = task.logits_right;
+        
+        int max_width = task.max_width;
+        int split = (logits_left + logits_right - 1) >> 1;
+
+        const target_t* text = task.text + text_left;
+
+        // this could probably be an int as long as multiplication is upcast
+        int64_t logits_stride = task.logits_stride;
+        const scalar_t* logits_view = task.logits_ptr+split*logits_stride;
+
+        // should this be here or in the prework kernel?
+        scalar_t* cur_left_probs = (split + 1 - logits_left) % 2 == 0 ? task.cur_probs : task.prev_probs;
+        scalar_t* cur_right_probs = (scalar_t*)((logits_right - split) % 2 == 0 ? task.data1 : task.data2);
+
+        using psi = cuda::std::pair<scalar_t, int>;
+        psi local = {-std::numeric_limits<scalar_t>::infinity(), 0};
+
+        auto op = max_op{};
+        for (int ci=work_ind;ci<max_width;ci+=threads_per_task) {
+            scalar_t cur = cur_left_probs[ci] + cur_right_probs[ci] - logits_view[text[ci]];
+            local = op(local, {cur, ci});
+        }
+
+        using BlockReduceT = cub::BlockReduce<psi, 1024>;
+        __shared__ typename BlockReduceT::TempStorage temp_storage;
+        psi block_max = BlockReduceT(temp_storage).Reduce(local, op);
+
+        if (threadIdx.x == 0) {
+            int pivot = block_max.second + text_left;
+
+            task.ans[split] = pivot;
+
+            out_pool->data()[2*task_ind] = {
+                .logits_ptr = task.logits_ptr,
+                .logits_stride = logits_stride,
+                .text = task.text,
+                .ans = task.ans,
+                .logits_left = logits_left,
+                .logits_right = split,
+                .text_left = text_left,
+                .text_right = pivot+1,
+                .max_width = pivot+1-text_left,
+            };
+
+            out_pool->data()[2*task_ind+1] = {
+                .logits_ptr = task.logits_ptr,
+                .logits_stride = logits_stride,
+                .text = task.text,
+                .ans = task.ans,
+                .logits_left = split+1,
+                .logits_right = logits_right,
+                .text_left = pivot,
+                .text_right = text_right,
+                .max_width = text_right-pivot,
+            };
+        }
+
+    }
+
     template<typename backtrack_t, typename scalar_t, typename target_t>
     void _hirschberg_viterbi_helper(
         const Tensor& logits,
@@ -353,30 +430,31 @@ namespace hirschberg_viterbi {
         int max_tasks = compute_max_tasks(logits_right);
         int max_width = text_right;
 
-        uintptr_t mem_needed = 0;
+        size_t mem_needed = 0;
         
         // could definitely be smaller than this (down to 50% or so)
         // but this is easy and only uses an extra 1.5MB for 3-hour inputs
         // (maximum number of tasks ever +1) * 3 * sizeof(task_t)
         // current tasks, next tasks, base tasks
-        uintptr_t mem_per_task_pool = (max_tasks + 1) * sizeof(task_t);
+        size_t mem_per_task_pool = (max_tasks + 1) * sizeof(task_t);
         mem_needed += mem_per_task_pool * 3;
         
         // 128 to pad to cache line
         mem_needed += 128;
 
-        // pad each task to cache line (avoid thrashing between sms)
-        mem_needed += 128*max_tasks;
-        
         // tasks memory pool (left, right, back1, back2, backpointers)
         // full length included, with one overlap between adjacent tasks
         // each task pads 2 to the left
-        uintptr_t mem_per_text_cut = (uintptr_t)(max_width + (2+1) * max_tasks) * sizeof(scalar_t);
+        size_t mem_per_text_cut = (size_t)(max_width + (2+1) * max_tasks) * sizeof(scalar_t);
         // left/right/prev1/prev2 - mem_per_text_cut * 4
         // left/right/backpointer - mem_per_text_cut * 2 + warpSize * logits size * uint8_t
-        uintptr_t branching_tasks = std::max(mem_per_text_cut*4, mem_per_text_cut*2 + (uintptr_t)backtrack_t::needed_size(logits_right, 32));
-        // TODO: also include the memory needed for device scan here
-        // figure out how I compute that
+        size_t branching_tasks = 128 * max_tasks + std::max(mem_per_text_cut*4, mem_per_text_cut*2 + (uintptr_t)backtrack_t::needed_size(logits_right, 32));
+
+        // can these be different, or will they be the same?
+        // I might not need to make two calls here
+        branching_tasks = max(branching_tasks, compute_reshard_memory_space<task_t, alignment_type::viterbi, backtrack_t>(max_tasks));
+        branching_tasks = max(branching_tasks, compute_reshard_memory_space<task_t, alignment_type::hirschberg_viterbi>(max_tasks));
+
         mem_needed += branching_tasks;
 
         // use a tensor to allocate the needed memory pool?
@@ -438,7 +516,7 @@ namespace hirschberg_viterbi {
         // will likely need thrust transforms to handle parsing the structs
 
         // copy the seed task over the the current pool
-        cudaMemcpy(((task_t*)cur_pool)+1, &task, sizeof(task_t), cudaMemcpyHostToDevice);
+        cudaMemcpy(cur_pool->data(), &task, sizeof(task_t), cudaMemcpyHostToDevice);
 
         // loop until everything is solved now
 
@@ -453,7 +531,26 @@ namespace hirschberg_viterbi {
         // don't launch more threads than needed (round up to next multiple of 32)
 
         // number of tasks will double each time until we are close to stopping
-        _hirshberg_viterbi_prework_kernel<scalar_t, target_t><<<1, 1024>>>(cur_pool);
+        // maybe scale number of threads to estimated amount of speech given current bounds
+        int num_tasks = 1;
+
+        _hirshberg_viterbi_prework_kernel<scalar_t, target_t><<<2*num_tasks, 1024>>>(cur_pool);
+
+        // set the number of tasks in the next pool
+        int next_tasks = 2*num_tasks;
+        cudaMemcpy(&next_pool->num_tasks, &next_tasks, sizeof(int), cudaMemcpyHostToDevice);
+        _hirshberg_viterbi_postwork_kernel<scalar_t, target_t><<<num_tasks, 1024>>>(cur_pool, next_pool);
+
+        // for not just call the base aligner as a test
+        // TODO: need to handle resharding next
+
+        // backtrack_t included whenter viterbi is used
+        // immediately recurse to basic viterbi for testing now
+        // this assumes the input sequence is short
+        assert(logits_right <= 60);
+        reshard_memory<task_t, alignment_type::viterbi, backtrack_t>(next_pool, data, branching_tasks, next_tasks);
+
+        _normal_viterbi_kernel<backtrack_t, scalar_t, target_t><<<2, 1024>>>(next_pool);
     }
 
     Tensor viterbi_cuda(
