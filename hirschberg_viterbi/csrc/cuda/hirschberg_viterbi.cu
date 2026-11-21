@@ -331,9 +331,6 @@ namespace hirschberg_viterbi {
                 }
             }
         }
-
-        // TODO: have a seperate kernel figure out alignment at the pivot after this one has run
-        // that way the two sides can run on different sms
     }
 
     template<typename scalar_t, typename target_t>
@@ -418,10 +415,6 @@ namespace hirschberg_viterbi {
         int logits_right,
         int text_right) {
 
-        // dummy function here just returns 0s for all the alignment
-        // TODO: remove this
-        cudaMemset(ans, 0, (logits_right)*sizeof(target_t));
-
         using task_t = alignment_task<scalar_t, target_t>;
         using pool_t = task_pool<task_t>;
 
@@ -487,9 +480,6 @@ namespace hirschberg_viterbi {
         seed_pool.num_tasks = 1;
         cudaMemcpy(cur_pool, &seed_pool, sizeof(pool_t), cudaMemcpyHostToDevice);
 
-        // todo: setup a kernel to shard this data for me (likely with device scan)
-        // ideally could be shared with the pruned version if I enforce shared design 
-        int step = max_width+2;
         task_t task{
             .logits_ptr = logits.mutable_data_ptr<scalar_t>(),
             .logits_stride = logits.stride(0),
@@ -500,57 +490,40 @@ namespace hirschberg_viterbi {
             .text_left = 0,
             .text_right = text_right,
             .max_width = max_width,
-
-            .cur_probs = (scalar_t*)(data) + 2,
-            .prev_probs = (scalar_t*)(data) + 2 + step,
-            // important that these two are right padded instead of left padded
-            .data1 = (void*)((scalar_t*)(data) + step*2),
-            .data2 = (void*)((scalar_t*)(data) + step*3),
         };
-
-        // use cub::DevicePartition::If to filter out the base cases
-        // filter out any max width <= warpSize for the basecase
-        // for a sequence with a lot of silence, maybe still run hirschberg, even if the text is short
-
-        // use cub::DeviceScan::Exclusive to shard out the memory needed for each task from the pre allocated pool
-        // will likely need thrust transforms to handle parsing the structs
 
         // copy the seed task over the the current pool
         cudaMemcpy(cur_pool->data(), &task, sizeof(task_t), cudaMemcpyHostToDevice);
 
         // loop until everything is solved now
 
-        // launch the kernel now
-        // should I track the maximum across all sub tasks to know how many threads to launch
-        // maybe i'll add that later
-        // as I approach the end, I will probably copy the number of tasks to only launch that many thread blocks
-        // otherwise, I might launch way more than needed, which has some overhead
-
-        // launch 1024 threads for all hv tasks
-        // compute the number of threads needed per sm? (or just to 1024 for efficiency)
-        // don't launch more threads than needed (round up to next multiple of 32)
-
         // number of tasks will double each time until we are close to stopping
-        // maybe scale number of threads to estimated amount of speech given current bounds
+
         int num_tasks = 1;
+        for(int width = logits_right;width > 15;width=width+1>>1) {
+            
+            // maybe scale number of threads to estimated max_width given current bounds
 
-        _hirshberg_viterbi_prework_kernel<scalar_t, target_t><<<2*num_tasks, 1024>>>(cur_pool);
+            reshard_memory<task_t, alignment_type::hirschberg_viterbi>(cur_pool, data, branching_tasks, num_tasks);
+            _hirshberg_viterbi_prework_kernel<scalar_t, target_t><<<2*num_tasks, 1024>>>(cur_pool);
+            
+            // set the number of tasks in the next pool
+            int next_tasks = 2*num_tasks;
+            cudaMemcpy(&next_pool->num_tasks, &next_tasks, sizeof(int), cudaMemcpyHostToDevice);
+            _hirshberg_viterbi_postwork_kernel<scalar_t, target_t><<<num_tasks, 1024>>>(cur_pool, next_pool);
 
-        // set the number of tasks in the next pool
-        int next_tasks = 2*num_tasks;
-        cudaMemcpy(&next_pool->num_tasks, &next_tasks, sizeof(int), cudaMemcpyHostToDevice);
-        _hirshberg_viterbi_postwork_kernel<scalar_t, target_t><<<num_tasks, 1024>>>(cur_pool, next_pool);
+            // TODO: use cub::DevicePartition::If to filter out the base cases early (instead of over recursing)
+            // if width < 100 or so
+            // filter out any max width <= warpSize for the basecase
+            // for a sequence with a lot of silence, maybe still run hirschberg, even if the text is short
 
-        // for not just call the base aligner as a test
-        // TODO: need to handle resharding next
+            num_tasks = next_tasks;
 
-        // backtrack_t included whenter viterbi is used
-        // immediately recurse to basic viterbi for testing now
-        // this assumes the input sequence is short
-        assert(logits_right <= 60);
-        reshard_memory<task_t, alignment_type::viterbi, backtrack_t>(next_pool, data, branching_tasks, next_tasks);
+            swap(cur_pool, next_pool);
+        }
 
-        _normal_viterbi_kernel<backtrack_t, scalar_t, target_t><<<2, 1024>>>(next_pool);
+        reshard_memory<task_t, alignment_type::viterbi, backtrack_t>(cur_pool, data, branching_tasks, num_tasks);
+        _normal_viterbi_kernel<backtrack_t, scalar_t, target_t><<<num_tasks, 1024>>>(cur_pool);
     }
 
     Tensor viterbi_cuda(
