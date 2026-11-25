@@ -5,10 +5,13 @@
 #include <torch/csrc/stable/library.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
+#include <torch/csrc/stable/c/shim.h>
+#include <torch/csrc/inductor/aoti_torch/c/shim.h>
 #include <torch/headeronly/core/ScalarType.h>
 #include <torch/headeronly/macros/Macros.h>
+#include <torch/headeronly/util/shim_utils.h>
 
-#include <torch/csrc/stable/c/shim.h>
+#include <cstdint>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -210,7 +213,13 @@ namespace hirschberg_viterbi {
     template<typename task_t, alignment_type tag, typename backtrack_t = void>
     size_t compute_reshard_memory_space(int n);
 
-    // TODO: add a print tensor function here
+    // TODO: add this to all operations
+    inline cudaStream_t get_torch_cuda_stream(int32_t device_index) {
+        void* stream = nullptr;
+        TORCH_ERROR_CODE_CHECK(
+            aoti_torch_get_current_cuda_stream(device_index, &stream));
+        return static_cast<cudaStream_t>(stream);
+    }
 
     __host__ int compute_max_tasks(int logits_length);
 };

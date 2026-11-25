@@ -23,6 +23,8 @@ using torch::headeronly::DeviceType;
 
 using namespace std;
 
+// TODO: avoid subtracting -inf emissions
+
 namespace hirschberg_viterbi {
 
     template<typename backtrack_t, typename scalar_t, typename target_t, bool single_warp_align = false>
@@ -169,6 +171,8 @@ namespace hirschberg_viterbi {
         using task_t = alignment_task<scalar_t, target_t>;
         using pool_t = task_pool<task_t>;
 
+        auto device_index = logits.get_device_index();
+
         int max_width = text_right;
         int step = (max_width + 2)*sizeof(scalar_t);
         // 256 to satifsy the memory aligner requirements
@@ -230,6 +234,7 @@ namespace hirschberg_viterbi {
         // assumption made in my code
         assert(blockDim.x % 32 == 0);
 
+        // TODO: just do a 2d launch instead
         int task_ind = blockIdx.x / 2;
         int work_ind = threadIdx.x;
         int threads_per_task = blockDim.x;
@@ -334,6 +339,290 @@ namespace hirschberg_viterbi {
     }
 
     template<typename scalar_t, typename target_t>
+    __global__ void _segmented_initialization_kernel(task_pool<alignment_task<scalar_t, target_t>>* pool) {
+        // assumption made in my code
+        assert(blockDim.x % 32 == 0);
+        assert(gridDim.y % 2 == 0);
+
+        // TODO: just do a 2d launch instead
+        int task_ind = blockIdx.x;
+        int work_ind = threadIdx.x;
+        int split_ind = blockIdx.z;
+        
+        int num_splits = gridDim.z;
+        int threads_per_split = blockDim.x;
+        
+        if (task_ind >= pool->num_tasks) return;
+
+        // for pascal compatability, no threads can exit untill all sync threads are passed
+
+        constexpr scalar_t mask_val = -std::numeric_limits<scalar_t>::infinity();
+
+        auto& task = pool->data()[task_ind];
+
+        int max_width = task.max_width;
+
+        // maybe div floor here for readability
+        int num_chunks = (max_width + 2 + threads_per_split - 1) / threads_per_split;
+        int chunks_per_split = (num_chunks + num_splits - 1) / num_splits;
+        int offset_per_split = threads_per_split * chunks_per_split;
+
+        if (blockIdx.y == 0) {
+            // forward pass
+            scalar_t* cur_left_probs = task.cur_probs;
+            scalar_t* prev_probs = task.prev_probs;
+            
+            int start = split_ind*offset_per_split - 2;
+            int end = cuda::std::min(max_width, offset_per_split*(split_ind+1)-2);
+
+            for (int i=start+work_ind;i<end;i+=threads_per_split) cur_left_probs[i] = mask_val;
+
+            // TODO: check this logic
+            // it needs to be the thread that sets cur_left_probs[0]
+            if (split_ind == 0 && work_ind == 2) {
+                prev_probs[-2] = prev_probs[-1] = mask_val;
+                // same thread as above, so this should be fine to be overwritten
+                cur_left_probs[0] = 0;
+            }
+
+        } else {
+            // backward pass
+            // they get padded on the right, not on the left???
+            scalar_t* cur_right_probs = (scalar_t*)task.data1;
+            scalar_t* prev_probs = (scalar_t*)task.data2;
+            
+            int start = split_ind*offset_per_split;
+            int end = cuda::std::min(max_width+2, offset_per_split*(split_ind+1));
+
+            for (int i=start+work_ind;i<end;i+=threads_per_split) cur_right_probs[i] = mask_val;
+
+            // should be the same thread that sets cur_right_probs[max_width-1] above
+            if (split_ind == (max_width-1)/offset_per_split && (max_width-1)%threads_per_split == work_ind) {
+                cur_right_probs[max_width-1] = 0;
+                prev_probs[max_width] = prev_probs[max_width+1] = mask_val;
+            }
+        }
+    }
+
+    
+    constexpr int NUM_STEPS_PER_CALL = 32;
+    constexpr int MAX_ASSIGN_PER_BLOCK = 512;
+    template<typename scalar_t, typename target_t>
+    __global__ void _segmented_advance_kernel(
+        task_pool<alignment_task<scalar_t, target_t>>* tasks,
+        int past_steps
+    ) {
+        // consider a kernel that steps multiple times per call
+        // would need extra memory (maybe shared if the partition is limited)
+        // that way I don't need more global memory
+        // this would make the grid size dependant on the max_width (which I was trying to avoid)
+        // maybe just launch based on the starting width (without reading from the device)
+
+        // compute the bounds for this thread block
+
+        int task_ind = blockIdx.x;
+        int work_ind = threadIdx.x;
+        int split_ind = blockIdx.z;
+        
+        int num_splits = gridDim.z;
+        int threads_per_split = blockDim.x;
+        
+        if (task_ind >= tasks->num_tasks) return;
+
+        // for pascal compatability, no threads can exit untill all sync threads are passed
+
+
+        auto& task = tasks->data()[task_ind];
+
+        int text_left = task.text_left, text_right = task.text_right;
+        int logits_left = task.logits_left, logits_right = task.logits_right;
+
+        int split = (logits_left + logits_right - 1) >> 1;
+        
+        int max_width = task.max_width;
+
+        // maybe div floor here for readability
+        int num_chunks = (max_width + threads_per_split - 1) / threads_per_split;
+        int chunks_per_split = (num_chunks + num_splits - 1) / num_splits;
+        int offset_per_split = threads_per_split * chunks_per_split;
+
+        int start = split_ind*offset_per_split;
+        int end = cuda::std::min(max_width, offset_per_split*(split_ind+1));
+
+        bool is_foward = blockIdx.y == 0;
+        if (start >= end || (is_foward?logits_left+past_steps>split:logits_right-past_steps<=split)) return;
+
+        int64_t logits_stride = task.logits_stride;
+        const target_t* text = task.text + text_left;
+
+        // use shared memory pool here, assert it is large enough
+        // maybe do 2048 for the size
+
+        // maybe do close to 32 here (average best case for warp divergence)
+
+
+        // figure out splitting here (capped 512, otherwise maximum needed to acheive full sm occupancy)
+        __shared__ scalar_t buf1[MAX_ASSIGN_PER_BLOCK + 2*NUM_STEPS_PER_CALL];
+        __shared__ scalar_t buf2[MAX_ASSIGN_PER_BLOCK + 2*NUM_STEPS_PER_CALL];
+        
+        // offset
+        
+        // initialize to -inf
+        constexpr scalar_t mask_val = -std::numeric_limits<scalar_t>::infinity();
+
+        // could add some if constexpr to see if these even need to run
+
+        // I don't like this division here
+        bool parity = (past_steps/NUM_STEPS_PER_CALL)%2 == 0;
+
+        if (is_foward) {
+            // (and only two values are needed then)
+            for (int i=work_ind;i<2*NUM_STEPS_PER_CALL;i+=threads_per_split) {
+                buf1[i] = mask_val;
+                buf2[i] = mask_val;
+            }
+
+            // I don't like this sync either, and I think it could be removed if the above initialization is mapped to the same thread in the first loop
+            __syncthreads();
+
+            scalar_t* buf1_ptr = buf1 - start + 2*NUM_STEPS_PER_CALL;
+            scalar_t* buf2_ptr = buf2 - start + 2*NUM_STEPS_PER_CALL;
+
+            // TODO: compute the parity of the output
+
+            // step forward kernel
+            int num_steps_now = cuda::std::min(int{NUM_STEPS_PER_CALL}, split+1-logits_left-past_steps);
+
+            const scalar_t* logits_view=task.logits_ptr+(logits_left+past_steps)*logits_stride;
+            for(int time=logits_left + past_steps, extra=2*num_steps_now-2; time <= split && extra>=0; ++time, logits_view+=logits_stride, extra-=2) {
+                // figure out what the buffers should be here
+                scalar_t* prev_probs;
+                if (time == logits_left + past_steps) prev_probs = parity ? task.cur_probs : task.prev_probs;
+                else if (time%2 == 0) prev_probs = buf1_ptr;
+                else prev_probs = buf2_ptr;
+                
+                scalar_t* cur_left_probs;
+                if (time == split || extra == 0) cur_left_probs = parity ? task.prev_probs : task.cur_probs;
+                else if (time%2 == 0) cur_left_probs = buf2_ptr;
+                else cur_left_probs = buf1_ptr;
+
+                // this ordering does not have cache-aligned memory access patterns
+                for (int ci=end-1-work_ind;ci>=cuda::std::max(0, start-extra);ci-=threads_per_split) {
+                    scalar_t& val=cur_left_probs[ci];
+                    val = prev_probs[ci];
+
+                    if (prev_probs[ci-1] > val) val=prev_probs[ci-1];
+                    // text padding allows us to look back past the start of text
+                    if (text[ci] != text[ci-2] && prev_probs[ci-2] > val) val=prev_probs[ci-2];
+
+                    val += logits_view[text[ci]];
+                }
+
+                __syncthreads();
+            }
+
+            // start at negatives
+        } else {
+            // TODO: this needs to be after the block size, not at the end here
+            // only use it if you are at the end (and only two values are needed then)
+            for (int i=work_ind;i<2*NUM_STEPS_PER_CALL;i+=threads_per_split) {
+                buf1[end - start + i] = mask_val;
+                buf2[end - start + i] = mask_val;
+            }
+
+            // this sync could also be removed by careful indexing
+            __syncthreads();
+
+            scalar_t* buf1_ptr = buf1 - start;
+            scalar_t* buf2_ptr = buf2 - start;
+            
+            // go slightly past the end
+
+            int num_steps_now = cuda::std::min(int{NUM_STEPS_PER_CALL}, logits_right-split-past_steps);
+
+            const scalar_t* logits_view=task.logits_ptr+(logits_right-past_steps)*logits_stride;
+            for(int time=logits_right-past_steps, extra=2*num_steps_now-2; --time >= split && extra>=0;extra-=2) {
+                logits_view-=logits_stride;
+                // figure out what the buffers should be here
+                scalar_t* prev_probs;
+                if (time == logits_right - past_steps - 1) prev_probs = (scalar_t*)(parity ? task.data1 : task.data2);
+                else if (time%2 == 0) prev_probs = buf1_ptr;
+                else prev_probs = buf2_ptr;
+                
+                scalar_t* cur_right_probs;
+                if (time == split || extra == 0) cur_right_probs = (scalar_t*)(parity ? task.data2 : task.data1);
+                else if (time%2 == 0) cur_right_probs = buf2_ptr;
+                else cur_right_probs = buf1_ptr;
+
+                // this ordering does not have cache-aligned memory access patterns
+                // this max_width is strictly defined as text_right - text_left, not the window width
+                for (int ci=start+work_ind;ci<cuda::std::min(end + extra, max_width);ci+=threads_per_split) {
+                    scalar_t& val=cur_right_probs[ci];
+                    val = prev_probs[ci];
+
+                    if (prev_probs[ci+1] > val) val=prev_probs[ci+1];
+                    // text padding allows us to look back past the end of text
+                    if (text[ci] != text[ci+2] && prev_probs[ci+2] > val) val=prev_probs[ci+2];
+
+                    val += logits_view[text[ci]];
+                }
+
+                __syncthreads();
+            }
+        }
+    }
+
+    template<typename scalar_t, typename target_t>
+    void _segmented_hirschberg_viterbi_prework(
+        task_pool<alignment_task<scalar_t, target_t>>* tasks,
+        int num_tasks,
+        int max_time_width,
+        int num_sms,
+        int max_text_width) {
+
+        using task_t = alignment_task<scalar_t, target_t>;
+        using pool_t = task_pool<task_t>;
+
+        // evenly divide each task amoung all sms
+        // consider lcm(2*num_tasks, num_sms) total
+        int num_blocks = num_sms / __gcd(num_sms, 2*num_tasks);
+
+        // what should this value be for best performance?
+        int num_threads = 128;
+
+        // initialize the buffers
+        _segmented_initialization_kernel<scalar_t, target_t><<<dim3(num_tasks, 2, num_blocks), num_threads>>>(tasks);
+        
+        // split is double counted, and we round up, hence +2
+        int max_steps = max_time_width+2>>1;
+
+        int min_chunks = (max_text_width + MAX_ASSIGN_PER_BLOCK - 1) / MAX_ASSIGN_PER_BLOCK;
+
+        // round min_chunks up to the next multiple of num_blocks
+        int split_blocks = min_chunks + (num_blocks - min_chunks % num_blocks) % num_blocks;
+        
+        // step max_width times
+        for (int step=0;step<max_steps;step+=NUM_STEPS_PER_CALL) {
+            // maybe multiple steps per kernel would be better
+            // consider how many blocks per task are needed here (maximum to either ensure occupancy or to fully divide the work so that it fits in shared memory)
+            _segmented_advance_kernel<scalar_t, target_t><<<dim3(num_tasks, 2, split_blocks), num_threads>>>(tasks, step);
+            
+            if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
+                static_assert(RESCALE_MAX_FREQ % NUM_STEPS_PER_CALL == 0);
+                if (step%RESCALE_MAX_FREQ == 0) {
+                    // TODO: add a renormalize kernel
+                    // I will likely start with a single block reduce per task here
+                    // this will simplify the overall code
+                    // but consider a device reduce operation if reasonable
+                    
+                }
+            }
+
+        }
+        
+    }
+
+    template<typename scalar_t, typename target_t, int parity_steps = 1>
     __global__ __launch_bounds__(1024) void _hirshberg_viterbi_postwork_kernel(
         task_pool<alignment_task<scalar_t, target_t>>* in_pool,
         task_pool<alignment_task<scalar_t, target_t>>* out_pool
@@ -359,8 +648,8 @@ namespace hirschberg_viterbi {
         const scalar_t* logits_view = task.logits_ptr+split*logits_stride;
 
         // should this be here or in the prework kernel?
-        scalar_t* cur_left_probs = (split + 1 - logits_left) % 2 == 0 ? task.cur_probs : task.prev_probs;
-        scalar_t* cur_right_probs = (scalar_t*)((logits_right - split) % 2 == 0 ? task.data1 : task.data2);
+        scalar_t* cur_left_probs = (split + 1 - logits_left + parity_steps - 1) / parity_steps % 2 == 0 ? task.cur_probs : task.prev_probs;
+        scalar_t* cur_right_probs = (scalar_t*)((logits_right - split + parity_steps - 1) / parity_steps % 2 == 0 ? task.data1 : task.data2);
 
         using psi = cuda::std::pair<scalar_t, int>;
         psi local = {-std::numeric_limits<scalar_t>::infinity(), 0};
@@ -403,6 +692,8 @@ namespace hirschberg_viterbi {
                 .text_right = text_right,
                 .max_width = text_right-pivot,
             };
+
+            if (task_ind == 0) out_pool->num_tasks = 2*in_pool->num_tasks;
         }
 
     }
@@ -414,9 +705,14 @@ namespace hirschberg_viterbi {
         target_t* const ans,
         int logits_right,
         int text_right) {
-
+            
         using task_t = alignment_task<scalar_t, target_t>;
         using pool_t = task_pool<task_t>;
+
+        auto device_index = logits.get_device_index();
+
+        int num_sms = 0;
+        STD_CUDA_CHECK(cudaDeviceGetAttribute(&num_sms, cudaDevAttrMultiProcessorCount, device_index));
 
         // how many divide by 2, rounding up needed until <= 15
         // in practice the cutoff could be a few times greater than this
@@ -500,24 +796,29 @@ namespace hirschberg_viterbi {
         // number of tasks will double each time until we are close to stopping
 
         int num_tasks = 1;
-        for(int width = logits_right;width > 15;width=width+1>>1) {
+        for(int width = logits_right;width > 15;width>>=1) {
             
             // maybe scale number of threads to estimated max_width given current bounds
 
             reshard_memory<task_t, alignment_type::hirschberg_viterbi>(cur_pool, data, branching_tasks, num_tasks);
-            _hirshberg_viterbi_prework_kernel<scalar_t, target_t><<<2*num_tasks, 1024>>>(cur_pool);
+            // maybe do something else here for the split logic
+            // probably include both width and num_tasks in the logic
+            if (2* num_tasks < num_sms) {
+                _segmented_hirschberg_viterbi_prework<scalar_t, target_t>(cur_pool, num_tasks, width, num_sms, text_right);
+                
+                _hirshberg_viterbi_postwork_kernel<scalar_t, target_t, NUM_STEPS_PER_CALL><<<num_tasks, 1024>>>(cur_pool, next_pool);
+            } else {
+                _hirshberg_viterbi_prework_kernel<scalar_t, target_t><<<2*num_tasks, 1024>>>(cur_pool);
+                
+                _hirshberg_viterbi_postwork_kernel<scalar_t, target_t, 1><<<num_tasks, 1024>>>(cur_pool, next_pool);
+            }
+            num_tasks *= 2;
             
-            // set the number of tasks in the next pool
-            int next_tasks = 2*num_tasks;
-            cudaMemcpy(&next_pool->num_tasks, &next_tasks, sizeof(int), cudaMemcpyHostToDevice);
-            _hirshberg_viterbi_postwork_kernel<scalar_t, target_t><<<num_tasks, 1024>>>(cur_pool, next_pool);
-
             // TODO: use cub::DevicePartition::If to filter out the base cases early (instead of over recursing)
             // if width < 100 or so
             // filter out any max width <= warpSize for the basecase
             // for a sequence with a lot of silence, maybe still run hirschberg, even if the text is short
 
-            num_tasks = next_tasks;
 
             swap(cur_pool, next_pool);
         }
@@ -530,6 +831,8 @@ namespace hirschberg_viterbi {
         const Tensor& log_probs,
         const Tensor& targets,
         const int32_t blank=0) {
+            
+        const torch::stable::accelerator::DeviceGuard device_guard(log_probs.get_device_index());
 
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CUDA, int32_t>(log_probs, targets, blank);
@@ -560,6 +863,8 @@ namespace hirschberg_viterbi {
         const Tensor& targets,
         const int32_t blank=0,
         const int64_t soft_mem_limit=1000) {
+
+        const torch::stable::accelerator::DeviceGuard device_guard(log_probs.get_device_index());
         
         auto [text_holder, text_len, cont_log_probs, ans] =
             common_setup<DeviceType::CUDA, int32_t>(log_probs, targets, blank);

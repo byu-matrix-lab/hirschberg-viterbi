@@ -6,7 +6,7 @@
 #include <torch/csrc/stable/tensor.h>
 
 // how often should this happen?
-#define RESCALE_MAX_FREQ 5000
+#define RESCALE_MAX_FREQ 5024
 
 namespace hirschberg_viterbi {
 
