@@ -166,7 +166,9 @@ namespace hirschberg_viterbi {
             __syncwarp();
 
             const scalar_t offset = block_high[warpInd];
-            for (int i=threadIdx.x%32; i<size; i += 32) array[i] -= offset;
+            if (offset > -std::numeric_limits<scalar_t>::infinity()) {
+                for (int i=threadIdx.x%32; i<size; i += 32) array[i] -= offset;
+            }
 
             __syncwarp();
         } else {
@@ -188,7 +190,9 @@ namespace hirschberg_viterbi {
 
             const scalar_t offset = block_high;
 
-            for (int i=threadIdx.x; i<size; i += threads) array[i] -= offset;
+            if (offset > -std::numeric_limits<scalar_t>::infinity()) {
+                for (int i=threadIdx.x; i<size; i += threads) array[i] -= offset;
+            }
 
             // is this needed?
             __syncthreads();
