@@ -488,8 +488,6 @@ namespace hirschberg_viterbi {
             scalar_t* buf1_ptr = buf1 - start + 2*NUM_STEPS_PER_CALL;
             scalar_t* buf2_ptr = buf2 - start + 2*NUM_STEPS_PER_CALL;
 
-            // TODO: compute the parity of the output
-
             // step forward kernel
             int num_steps_now = cuda::std::min(int{NUM_STEPS_PER_CALL}, split+1-logits_left-past_steps);
 
@@ -523,8 +521,6 @@ namespace hirschberg_viterbi {
 
             // start at negatives
         } else {
-            // TODO: this needs to be after the block size, not at the end here
-            // only use it if you are at the end (and only two values are needed then)
             for (int i=work_ind;i<2*NUM_STEPS_PER_CALL;i+=threads_per_split) {
                 buf1[end - start + i] = mask_val;
                 buf2[end - start + i] = mask_val;
@@ -573,6 +569,29 @@ namespace hirschberg_viterbi {
     }
 
     template<typename scalar_t, typename target_t>
+    __global__ void _rescale_max_for_segmented(task_pool<alignment_task<scalar_t, target_t>>* tasks, int past_steps) {
+        // this could probably be segmented as well, but I would expect small gains for doing so
+        int task_ind = blockIdx.x;
+        int work_ind = threadIdx.x;
+
+        if (task_ind >= tasks->num_tasks) return;
+        
+        auto& task = tasks->data()[task_ind];
+
+        int parity = past_steps / NUM_STEPS_PER_CALL % 2 == 0;
+        
+        // compute which side
+        scalar_t* probs;
+        if (blockIdx.y == 0) {
+            probs = parity ? task.cur_probs : task.prev_probs;
+        } else {
+            probs = (scalar_t*)(parity ? task.data1 : task.data2);
+        }
+
+        cuda_rescale_max_dispatch<scalar_t, false>(probs, task.max_width, blockDim.x);
+    }
+
+    template<typename scalar_t, typename target_t>
     void _segmented_hirschberg_viterbi_prework(
         task_pool<alignment_task<scalar_t, target_t>>* tasks,
         int num_tasks,
@@ -585,7 +604,9 @@ namespace hirschberg_viterbi {
 
         // evenly divide each task amoung all sms
         // consider lcm(2*num_tasks, num_sms) total
-        int num_blocks = num_sms / __gcd(num_sms, 2*num_tasks);
+        // this could potentially be a lot smaller, this is the smallest that evenly divides work between all sms
+        int num_blocks = std::min(num_sms / __gcd(num_sms, 2*num_tasks), 4*num_sms / (2*num_tasks));
+        num_blocks = std::max(1, num_blocks);
 
         // what should this value be for best performance?
         int num_threads = 128;
@@ -596,25 +617,25 @@ namespace hirschberg_viterbi {
         // split is double counted, and we round up, hence +2
         int max_steps = max_time_width+2>>1;
 
-        int min_chunks = (max_text_width + MAX_ASSIGN_PER_BLOCK - 1) / MAX_ASSIGN_PER_BLOCK;
+        // maybe take the min here based on the maximum steps possible as well
+        int min_chunks = (std::min(max_text_width, 2*max_time_width + 3) + MAX_ASSIGN_PER_BLOCK - 1) / MAX_ASSIGN_PER_BLOCK;
 
         // round min_chunks up to the next multiple of num_blocks
         int split_blocks = min_chunks + (num_blocks - min_chunks % num_blocks) % num_blocks;
         
         // step max_width times
-        for (int step=0;step<max_steps;step+=NUM_STEPS_PER_CALL) {
+        for (int step=0;step<max_steps;) {
             // maybe multiple steps per kernel would be better
             // consider how many blocks per task are needed here (maximum to either ensure occupancy or to fully divide the work so that it fits in shared memory)
             _segmented_advance_kernel<scalar_t, target_t><<<dim3(num_tasks, 2, split_blocks), num_threads>>>(tasks, step);
             
+            step+=NUM_STEPS_PER_CALL;
+
             if constexpr (std::is_same_v<scalar_t, float> && RESCALE_MAX_FREQ!=-1) {
                 static_assert(RESCALE_MAX_FREQ % NUM_STEPS_PER_CALL == 0);
                 if (step%RESCALE_MAX_FREQ == 0) {
-                    // TODO: add a renormalize kernel
-                    // I will likely start with a single block reduce per task here
-                    // this will simplify the overall code
-                    // but consider a device reduce operation if reasonable
-                    
+                    // consider a device reduce operation if reasonable
+                    _rescale_max_for_segmented<scalar_t, target_t><<<dim3(num_tasks, 2, 1), 1024>>>(tasks, step);
                 }
             }
 
