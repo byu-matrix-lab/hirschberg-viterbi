@@ -67,7 +67,7 @@ namespace hirschberg_viterbi {
         for (int i=0;i<targets.size(0);++i) {
             target_t val = targ_pointer[i];
             STD_TORCH_CHECK(val != blank, "Blank should not occur in targets (index ", i,")");
-            STD_TORCH_CHECK(0 < val && val < charset_size, "Target value ", val, "is outside character set [1, ",charset_size,")");
+            STD_TORCH_CHECK(0 <= val && val < charset_size, "Target value ", val, "is outside character set [0, ",charset_size,")");
             num_repeats+=(val==pval);
             pval=val;
         }

@@ -122,7 +122,7 @@ namespace hirschberg_viterbi {
         int count = 0;
 
         for(int i=blockIdx.x * blockDim.x + threadIdx.x;i<target_length;i+=blockDim.x) {
-            if (targets[i] <= 0 || targets[i] >= charset_size) {
+            if (targets[i] < 0 || targets[i] >= charset_size || targets[i] == blank) {
                 bad_ind = i;
                 break;
             }
@@ -203,8 +203,9 @@ namespace hirschberg_viterbi {
         int ans = 0;
         // 15 logits can have at most 2*15+1 text positions
         // this ensures the alignment will fit in a single warp
-        // repeatedly divide by 2, rounding up, until 15 is reached
-        while (logits_length > 15) ++ans, logits_length = (logits_length+1)>>1;
+        // repeatedly - 1 divide by 2, rounding up, until 15 is reached
+        // -1 and round up cancel out
+        while (logits_length > 15) ++ans, logits_length = (logits_length)>>1;
         return 1<<ans;
     }
 
